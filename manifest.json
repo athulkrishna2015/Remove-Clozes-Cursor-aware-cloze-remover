@@ -1,0 +1,13 @@
+{
+    "name": "Remove Clozes",
+    "package": "remove_clozes",
+    "ankiweb_id": "836994508",
+    "author": "Glutanimate",
+    "version": "992e0ef",
+    "homepage": "https://github.com/glutanimate/remove-clozes",
+    "conflicts": [
+        "836994508"
+    ],
+    "mod": 1653128682,
+    "min_point_version": 28
+}
