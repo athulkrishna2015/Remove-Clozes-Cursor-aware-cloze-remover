@@ -1,1 +1,1 @@
-{"min_point_version": 41, "conflicts": ["836994508"], "homepage": "https://github.com/glutanimate/remove-clozes", "mod": 1653128961, "name": "Remove Cloze Button and Hotkey", "max_point_version": 52, "branch_index": 1, "disabled": false}
+{"conflicts": ["836994508"], "min_point_version": 1, "mod": 1762068598, "homepage": "https://github.com/glutanimate/remove-clozes", "name": "Remove Clozes  Cursoraware cloze remover", "max_point_version": 1, "branch_index": 0, "disabled": false}

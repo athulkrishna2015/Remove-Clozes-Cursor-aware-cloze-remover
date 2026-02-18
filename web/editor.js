@@ -232,8 +232,68 @@ Cursor-aware, nested-safe cloze remover with native undo
     }
   }
 
+  function removeClozesInSelection() {
+    const root = getActiveRoot();
+    const editable = getEditableDiv(root);
+    if (!editable) return;
+
+    if (editable.focus) editable.focus();
+
+    const sel = root.getSelection ? root.getSelection() : document.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+
+    let range = sel.getRangeAt(0);
+    if (range.collapsed) {
+      removeClozeAtCursor();
+      return;
+    }
+
+    const frag = range.cloneContents();
+    const tmpDiv = document.createElement("div");
+    tmpDiv.appendChild(frag);
+    const originalHTML = tmpDiv.innerHTML;
+    let html = originalHTML;
+
+    // Regex to match innermost clozes and strip markers + hints
+    const clozeRegex = /\{\{c\d+::((?:(?!\{\{c\d+::)[\s\S])*?)(?:::[^}]*)?\}\}/g;
+
+    let oldHtml;
+    do {
+      oldHtml = html;
+      html = html.replace(clozeRegex, "$1");
+    } while (html !== oldHtml);
+
+    if (html !== originalHTML) {
+      const canInsertHTML =
+        typeof document.queryCommandSupported === "function"
+          ? document.queryCommandSupported("insertHTML")
+          : true;
+
+      if (canInsertHTML) {
+        document.execCommand("insertHTML", false, html);
+      } else {
+        range.deleteContents();
+        const newFrag = document.createRange().createContextualFragment(html);
+        range.insertNode(newFrag);
+      }
+
+      // Notify Anki
+      try {
+        editable.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      } catch (e) {
+        const evt = document.createEvent("Event");
+        evt.initEvent("input", true, false);
+        editable.dispatchEvent(evt);
+      }
+    } else {
+      // No clozes found WITHIN the selection, fall back to cursor-based removal
+      // which handles the case where the selection is entirely inside one cloze.
+      removeClozeAtCursor();
+    }
+  }
+
   // Public API expected by the add-on’s Python side and hotkey
   window.removeClozes = function () {
-    removeClozeAtCursor();
+    removeClozesInSelection();
   };
 })();
