@@ -3,6 +3,7 @@
 [install via anki web](https://ankiweb.net/shared/info/232855722)
 
 A small Anki editor enhancement that removes cloze formatting around the caret or within a selection, correctly handling nested clozes and optional hints while preserving inline formatting and native undo support. 
+Pairs well with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438) for in-review field editing workflows.
 
 ## Features
 - Removes all clozes found within a selected block of text.
@@ -38,8 +39,20 @@ This project is licensed under the GNU Affero General Public License v3, with Ad
 If you modify and convey this project, mark your changes with a prominent “modified by + date” notice in the modified source files and keep all legal notices and attributions intact. 
 
 ## Changelog
-- 2026‑02‑18: Added support for removing all clozes within a text selection.
-- 2025‑11‑02: Implemented cursor‑aware, nested‑safe cloze removal with native undo; opener‑caret targets the correct cloze. 
+### 2026-02-24
+- Fixed paragraph/newline loss when removing a cloze at the start of a line.
+- Improved undo stability.
+- Ignored key-repeat so one hotkey press triggers one removal.
+- Added compatibility for cloze-removal hotkey while editing fields during review with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438), with safe fallback when that add-on is not installed.
+- Reworked selection-based removal to use DOM-preserving cloze unwrapping instead of HTML-string regex replacement.
+- Restricted review-screen script injection to active [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438) environments.
+- Tightened editable-element detection to avoid operating on non-editor root containers.
+
+### 2026-02-18
+- Added support for removing all clozes within a text selection.
+
+### 2025-11-02
+- Implemented cursor‑aware, nested‑safe cloze removal with native undo; opener‑caret targets the correct cloze. 
 
 ## Acknowledgments
 Original work and licensing by Glutanimate (see header in `web/editor.js`) and `LICENSE.txt` for AGPLv3 + Additional Terms. 
