@@ -1,3 +1,4 @@
 {
-    "hotkey": "Ctrl+Alt+Shift+R"
+    "hotkey": "Ctrl+Alt+Shift+R",
+    "strip_pasted_clozes_in_non_cloze_fields": true
 }

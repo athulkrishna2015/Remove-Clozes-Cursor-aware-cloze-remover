@@ -2,12 +2,13 @@
 
 [install via anki web](https://ankiweb.net/shared/info/232855722)
 
-A small Anki editor enhancement that removes cloze formatting around the caret or within a selection, correctly handling nested clozes and optional hints while preserving inline formatting and native undo support. 
+A small Anki editor enhancement that removes cloze formatting around the caret or within a selection, and can also strip cloze markup from pasted content in non-cloze fields, while correctly handling nested clozes, optional hints, inline formatting, and native undo support. 
 Pairs well with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438) for in-review field editing workflows.
 
 ## Features
 - Removes all clozes found within a selected block of text.
 - Removes only the innermost cloze that contains the caret if no text is selected. 
+- Automatically removes pasted cloze markup in fields that do not use the `cloze:` filter.
 - Correctly skips over nested clozes to find the matching closing braces for the current cloze. 
 - Treats the caret inside the opener `{{cN::` as inside that cloze, not the parent. 
 - Drops optional hint/comments (e.g., `::hint`) at the current cloze level. 
@@ -17,16 +18,19 @@ Pairs well with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/in
 ## Usage
 - **Selection**: Select a block of text and use the hotkey to remove all clozes within that selection.
 - **Caret**: Place the caret anywhere inside the cloze to remove only that cloze; for nested clozes, the innermost one is removed first. 
+- **Paste**: When you paste cloze text into a field that does not use the `cloze:` filter, the pasted `{{cN::...}}` markup is automatically removed. Pasting into cloze fields keeps the markup intact.
 - Default hotkey: Ctrl+Alt+Shift+R. 
 - Works when the caret is placed on the opener token `{{cN::`, targeting that cloze instead of the parent. 
 
 ## Configuration
-- The default hotkey can be customized in `config.json`. 
+- The default hotkey can be customized in `config.json`.
+- Automatic paste stripping for non-cloze fields is controlled by `strip_pasted_clozes_in_non_cloze_fields` and is enabled by default.
 - See `config.md` for the configuration key documentation. 
 
 ## Notes on behavior
 - Optional hints are recognized only at depth 1 of the currently targeted cloze, so `{{c1::text::hint}}` becomes `text`. 
 - Nested clozes are preserved when removing an outer cloze that encloses them if only the caret is used, but are removed if they are part of a larger selection.
+- The paste cleanup only runs when the target field is known to be a non-`cloze:` field.
 - The editor is notified of changes and native undo is supported via a single insertHTML operation. 
 
 ## Appropriate Legal Notices (Attribution)
@@ -39,6 +43,10 @@ This project is licensed under the GNU Affero General Public License v3, with Ad
 If you modify and convey this project, mark your changes with a prominent “modified by + date” notice in the modified source files and keep all legal notices and attributions intact. 
 
 ## Changelog
+### 2026-03-07
+- Added automatic cloze stripping for pasted content in fields that do not use the `cloze:` filter.
+- Made the paste cleanup configurable with `strip_pasted_clozes_in_non_cloze_fields`, enabled by default.
+
 ### 2026-02-24
 - Fixed paragraph/newline loss when removing a cloze at the start of a line.
 - Improved undo stability.

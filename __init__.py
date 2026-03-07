@@ -55,13 +55,23 @@ EFDRC_ADDON_ID = "385888438"
 _EFDRC_ENABLED_CACHE: Optional[bool] = None
 
 
+def _addon_config() -> dict[str, Any]:
+    config = mw.addonManager.getConfig(__name__) or {}
+    return config if isinstance(config, dict) else {}
+
+
 def _configured_hotkey() -> str:
     default = "Ctrl+Alt+Shift+R"
-    config = mw.addonManager.getConfig(__name__) or {}
+    config = _addon_config()
     hotkey = config.get("hotkey", default)
     if isinstance(hotkey, str) and hotkey.strip():
         return hotkey
     return default
+
+
+def _configured_bool(key: str, default: bool) -> bool:
+    value = _addon_config().get(key, default)
+    return value if isinstance(value, bool) else default
 
 
 def _review_contexts() -> Tuple[type, ...]:
@@ -95,15 +105,50 @@ def _efdrc_enabled() -> bool:
     return enabled
 
 
+def _review_cloze_field_names(context: Any) -> Optional[List[str]]:
+    card = None
+    if Reviewer is not None and isinstance(context, Reviewer):
+        card = getattr(context, "card", None)
+    elif MultiCardPreviewer is not None and isinstance(context, MultiCardPreviewer):
+        card_getter = getattr(context, "card", None)
+        if callable(card_getter):
+            card = card_getter()
+
+    if card is None:
+        return None
+
+    try:
+        note = card.note()
+        note_type = note.note_type()
+        if note_type is None:
+            return None
+
+        cloze_ords = set(mw.col.models.cloze_fields(note.mid))
+        return [
+            field["name"]
+            for field in note_type["flds"]
+            if field.get("ord") in cloze_ords
+        ]
+    except Exception:
+        return None
+
+
 def inject_editor_script(web_content: "WebContent", context: Any):
-    hotkey = _configured_hotkey()
+    config = {
+        "hotkey": _configured_hotkey(),
+        "stripPastedClozesInNonClozeFields": _configured_bool(
+            "strip_pasted_clozes_in_non_cloze_fields", True
+        ),
+        "reviewClozeFieldNames": _review_cloze_field_names(context),
+    }
     should_inject = isinstance(context, Editor)
     if not should_inject and _efdrc_enabled():
         should_inject = isinstance(context, _review_contexts())
 
     if should_inject:
         web_content.head += (
-            f"""<script>window.RemoveClozesHotkey = {json.dumps(hotkey)};</script>"""
+            f"""<script>window.RemoveClozesConfig = {json.dumps(config)};"""
+            """window.RemoveClozesHotkey = window.RemoveClozesConfig.hotkey;</script>"""
             f"""<script src="/_addons/{MODULE_ADDON}/web/editor.js"></script>"""
         )
 

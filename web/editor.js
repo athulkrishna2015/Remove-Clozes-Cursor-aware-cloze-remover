@@ -49,6 +49,14 @@ Cursor-aware, nested-safe cloze remover with native undo
 */
 
 (function () {
+  const removeClozesConfig = window.RemoveClozesConfig || {};
+  const stripPastedClozesInNonClozeFields =
+    removeClozesConfig.stripPastedClozesInNonClozeFields !== false;
+  const reviewClozeFieldNames = Array.isArray(removeClozesConfig.reviewClozeFieldNames)
+    ? new Set(removeClozesConfig.reviewClozeFieldNames)
+    : null;
+  let editorClozeFields = null;
+
   function parseShortcut(shortcut) {
     if (!shortcut || typeof shortcut !== "string") return null;
     const keys = shortcut.toLowerCase().split(/[+]/).map((k) => k.trim()).filter(Boolean);
@@ -104,6 +112,150 @@ Cursor-aware, nested-safe cloze remover with native undo
     }, true);
 
     window.__removeClozesReviewShortcutBound = true;
+  }
+
+  function interceptWindowFunction(name, beforeCall) {
+    const wrap = function (fn) {
+      if (typeof fn !== "function" || fn.__removeClozesWrapped) {
+        return fn;
+      }
+
+      const wrapped = function (...args) {
+        beforeCall(...args);
+        return fn.apply(this, args);
+      };
+      wrapped.__removeClozesWrapped = true;
+      return wrapped;
+    };
+
+    let current = wrap(window[name]);
+    try {
+      Object.defineProperty(window, name, {
+        configurable: true,
+        get() {
+          return current;
+        },
+        set(value) {
+          current = wrap(value);
+        },
+      });
+    } catch (e) {
+      if (typeof current === "function") {
+        window[name] = current;
+      }
+    }
+  }
+
+  function decodeBase64Unicode(value) {
+    if (!value) return "";
+    try {
+      return decodeURIComponent(
+        window.atob(value)
+          .split("")
+          .map(function (char) {
+            return `%${(`00${char.charCodeAt(0).toString(16)}`).slice(-2)}`;
+          })
+          .join("")
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function getRootSelection(root) {
+    return root && root.getSelection ? root.getSelection() : document.getSelection();
+  }
+
+  function canUseCommand(name) {
+    return typeof document.queryCommandSupported === "function"
+      ? document.queryCommandSupported(name)
+      : true;
+  }
+
+  function collapseSelectionToEnd(selection) {
+    if (selection && selection.collapseToEnd) {
+      try {
+        selection.collapseToEnd();
+      } catch (e) {}
+    }
+  }
+
+  function notifyInput(editable) {
+    try {
+      editable.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    } catch (e) {
+      const evt = document.createEvent("Event");
+      evt.initEvent("input", true, false);
+      editable.dispatchEvent(evt);
+    }
+  }
+
+  function getClosestMatchingNode(node, selector) {
+    let current = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    while (current) {
+      if (current.matches && current.matches(selector)) {
+        return current;
+      }
+      if (current.closest) {
+        const match = current.closest(selector);
+        if (match) return match;
+      }
+      const root = current.getRootNode ? current.getRootNode() : null;
+      current = root && root.host ? root.host : null;
+    }
+    return null;
+  }
+
+  function getEditableFromEvent(event) {
+    if (event && typeof event.composedPath === "function") {
+      const path = event.composedPath();
+      for (const node of path) {
+        if (node && node.nodeType === Node.ELEMENT_NODE && node.isContentEditable) {
+          return node;
+        }
+      }
+    }
+
+    const root = getActiveRoot();
+    return getEditableDiv(root);
+  }
+
+  function editorFieldUsesClozeFilter(editable) {
+    if (!Array.isArray(editorClozeFields)) return null;
+
+    const container = getClosestMatchingNode(editable, ".field-container");
+    if (!container) return null;
+
+    const rawIndex = container.getAttribute("data-index") || "";
+    const fieldIndex = Number.parseInt(rawIndex, 10);
+    if (Number.isNaN(fieldIndex)) return null;
+    return !!editorClozeFields[fieldIndex];
+  }
+
+  function reviewFieldUsesClozeFilter(editable) {
+    if (!reviewClozeFieldNames) return null;
+
+    const field = getClosestMatchingNode(editable, "[data-EFDRCfield]");
+    if (!field) return null;
+
+    const encodedFieldName = field.getAttribute("data-EFDRCfield");
+    return reviewClozeFieldNames.has(decodeBase64Unicode(encodedFieldName));
+  }
+
+  function shouldStripPastedClozes(editable) {
+    if (!stripPastedClozesInNonClozeFields || !editable) return false;
+
+    const reviewFieldIsCloze = reviewFieldUsesClozeFilter(editable);
+    if (reviewFieldIsCloze !== null) {
+      return !reviewFieldIsCloze;
+    }
+
+    const editorFieldIsCloze = editorFieldUsesClozeFilter(editable);
+    if (editorFieldIsCloze !== null) {
+      return !editorFieldIsCloze;
+    }
+
+    return false;
   }
 
   function getActiveRoot() {
@@ -254,6 +406,114 @@ Cursor-aware, nested-safe cloze remover with native undo
     return replaced;
   }
 
+  function stripClozesFromHTML(html) {
+    if (!html || !html.includes("{{c")) return null;
+
+    const tmpDiv = document.createElement("div");
+    tmpDiv.innerHTML = html;
+    if (!findAllClozeRanges(tmpDiv.textContent || "").length) {
+      return null;
+    }
+
+    return removeAllClozesFromContainer(tmpDiv) ? tmpDiv.innerHTML : null;
+  }
+
+  function stripClozesFromText(text) {
+    if (!text || !text.includes("{{c")) return null;
+
+    const tmpDiv = document.createElement("div");
+    tmpDiv.textContent = text;
+    if (!findAllClozeRanges(tmpDiv.textContent || "").length) {
+      return null;
+    }
+
+    return removeAllClozesFromContainer(tmpDiv) ? (tmpDiv.textContent || "") : null;
+  }
+
+  function insertPasteReplacement(root, range, replacement) {
+    const selection = getRootSelection(root);
+    if (!selection) return false;
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    if (Object.prototype.hasOwnProperty.call(replacement, "html")) {
+      if (canUseCommand("insertHTML")) {
+        document.execCommand("insertHTML", false, replacement.html);
+        collapseSelectionToEnd(selection);
+        return true;
+      }
+
+      range.deleteContents();
+      const frag = range.createContextualFragment(replacement.html);
+      const lastNode = frag.lastChild;
+      range.insertNode(frag);
+      if (lastNode) {
+        range.setStartAfter(lastNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      return true;
+    }
+
+    if (canUseCommand("insertText")) {
+      document.execCommand("insertText", false, replacement.text);
+      collapseSelectionToEnd(selection);
+      return true;
+    }
+
+    range.deleteContents();
+    const textNode = document.createTextNode(replacement.text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }
+
+  function handlePasteStripClozes(event) {
+    if (event.defaultPrevented) return;
+
+    const editable = getEditableFromEvent(event);
+    if (!shouldStripPastedClozes(editable)) return;
+
+    const clipboard = event.clipboardData || window.clipboardData;
+    if (!clipboard || typeof clipboard.getData !== "function") return;
+
+    const html = clipboard.getData("text/html") || "";
+    const text = clipboard.getData("text/plain") || "";
+
+    let replacement = null;
+    const strippedHTML = stripClozesFromHTML(html);
+    if (strippedHTML !== null) {
+      replacement = { html: strippedHTML };
+    } else {
+      const strippedText = stripClozesFromText(text);
+      if (strippedText === null) return;
+      replacement = { text: strippedText };
+    }
+
+    const root = editable && editable.getRootNode ? editable.getRootNode() : getActiveRoot();
+    const selection = getRootSelection(root);
+    if (!selection || selection.rangeCount === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const range = selection.getRangeAt(0).cloneRange();
+    if (!insertPasteReplacement(root, range, replacement)) return;
+    notifyInput(editable);
+  }
+
+  function installPasteHandlerIfNeeded() {
+    if (window.__removeClozesPasteHandlerBound) return;
+
+    document.addEventListener("paste", handlePasteStripClozes, true);
+    window.__removeClozesPasteHandlerBound = true;
+  }
+
   function replaceClozeByBounds(root, editable, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
 
@@ -274,27 +534,18 @@ Cursor-aware, nested-safe cloze remover with native undo
     outerRange.setStart(outerStartPos.node, outerStartPos.offset);
     outerRange.setEnd(outerEndPos.node, outerEndPos.offset);
 
-    const editSel = root.getSelection ? root.getSelection() : document.getSelection();
+    const editSel = getRootSelection(root);
     if (!editSel) return false;
     editSel.removeAllRanges();
     editSel.addRange(outerRange);
 
-    const canInsertHTML =
-      typeof document.queryCommandSupported === "function"
-        ? document.queryCommandSupported("insertHTML")
-        : true;
-
-    if (canInsertHTML) {
+    if (canUseCommand("insertHTML")) {
       document.execCommand("insertHTML", false, innerHTML);
-      if (editSel.collapseToEnd) {
-        try {
-          editSel.collapseToEnd();
-        } catch (e) {}
-      }
+      collapseSelectionToEnd(editSel);
     } else {
       // Fallback (may not integrate with undo)
       outerRange.deleteContents();
-      const frag = document.createRange().createContextualFragment(innerHTML);
+      const frag = outerRange.createContextualFragment(innerHTML);
       outerRange.insertNode(frag);
       if (editSel.removeAllRanges) {
         editSel.removeAllRanges();
@@ -397,13 +648,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     if (!replaced) return;
 
     // Notify Anki
-    try {
-      editable.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    } catch (e) {
-      const evt = document.createEvent("Event");
-      evt.initEvent("input", true, false);
-      editable.dispatchEvent(evt);
-    }
+    notifyInput(editable);
   }
 
   function removeClozesInSelection() {
@@ -437,43 +682,40 @@ Cursor-aware, nested-safe cloze remover with native undo
     if (!replaced) return;
 
     const replacementHTML = tmpDiv.innerHTML;
-    const editSel = root.getSelection ? root.getSelection() : document.getSelection();
+    const editSel = getRootSelection(root);
     if (!editSel) return;
     editSel.removeAllRanges();
     editSel.addRange(range);
 
-    const canInsertHTML =
-      typeof document.queryCommandSupported === "function"
-        ? document.queryCommandSupported("insertHTML")
-        : true;
-
-    if (canInsertHTML) {
+    if (canUseCommand("insertHTML")) {
       document.execCommand("insertHTML", false, replacementHTML);
-      if (editSel.collapseToEnd) {
-        try {
-          editSel.collapseToEnd();
-        } catch (e) {}
-      }
+      collapseSelectionToEnd(editSel);
     } else {
       range.deleteContents();
-      const newFrag = document.createRange().createContextualFragment(replacementHTML);
+      const newFrag = range.createContextualFragment(replacementHTML);
+      const lastNode = newFrag.lastChild;
       range.insertNode(newFrag);
+      if (lastNode) {
+        range.setStartAfter(lastNode);
+        range.collapse(true);
+        editSel.removeAllRanges();
+        editSel.addRange(range);
+      }
     }
 
     // Notify Anki
-    try {
-      editable.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    } catch (e) {
-      const evt = document.createEvent("Event");
-      evt.initEvent("input", true, false);
-      editable.dispatchEvent(evt);
-    }
+    notifyInput(editable);
   }
+
+  interceptWindowFunction("setClozeFields", function (fields) {
+    editorClozeFields = Array.isArray(fields) ? fields.map(Boolean) : null;
+  });
 
   // Public API expected by the add-on’s Python side and hotkey
   window.removeClozes = function () {
     removeClozesInSelection();
   };
 
+  installPasteHandlerIfNeeded();
   installReviewShortcutIfNeeded();
 })();
