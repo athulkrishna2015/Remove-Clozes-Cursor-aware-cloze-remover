@@ -12,6 +12,6 @@
 
 ### `safe_backend_mode`
 
-(boolean): When enabled, cloze removal for selections is handled by Python using the field HTML instead of DOM edits. Collapsed selections fall back to the JS cursor-aware remover. This avoids MathJax preview duplication at the cost of native undo and selection preservation. Default: `false`
+(boolean): When enabled, cloze removal for selections is handled by Python using the field HTML instead of DOM edits. Collapsed selections fall back to the JS cursor-aware remover. This avoids MathJax preview duplication at the cost of native undo and selection preservation for selections. Default: `false`
 
 ---

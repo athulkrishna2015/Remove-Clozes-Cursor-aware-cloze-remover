@@ -38,6 +38,10 @@ from aqt.editor import Editor
 from aqt.gui_hooks import editor_did_init_buttons, webview_will_set_content
 
 from .config import init_config
+from .backend import (
+    apply_backend_result as _apply_backend_result_backend,
+    remove_clozes_backend as _remove_clozes_backend_impl,
+)
 init_config()
 
 try:
@@ -176,52 +180,13 @@ def remove_clozes(editor: "Editor"):
 
 
 def remove_clozes_backend(editor: "Editor"):
-    if not editor.web or not editor.note:
-        return
-
-    def after_saved() -> None:
-        if not editor.web:
-            return
-
-        editor.web.evalWithCallback(
-            "window.removeClozesBackend && window.removeClozesBackend();",
-            lambda result: _apply_backend_result(editor, result),
-        )
-
-    editor.saveNow(after_saved, keepFocus=True)
+    # Backwards-compatible wrapper for older references.
+    _remove_clozes_backend_impl(editor)
 
 
 def _apply_backend_result(editor: "Editor", result: Any) -> None:
-    if not editor.web or not editor.note:
-        return
-    if not isinstance(result, dict):
-        return
-    if not result.get("changed"):
-        if result.get("reason") == "selection-collapsed":
-            editor.web.eval("removeClozes();")
-        return
-        return
-
-    if result.get("kind") == "textarea":
-        text = result.get("text")
-        if isinstance(text, str):
-            editor.web.eval(
-                f"window.applyRemoveClozesTextarea({json.dumps(text)});"
-            )
-        return
-
-    field_index = result.get("fieldIndex")
-    html = result.get("html")
-    if not isinstance(field_index, int) or not isinstance(html, str):
-        return
-
-    if field_index < 0 or field_index >= len(editor.note.fields):
-        return
-
-    editor.note.fields[field_index] = html
-    if not editor.addMode:
-        editor._save_current_note()
-    editor.loadNoteKeepingFocus()
+    # Backwards-compatible wrapper for older references.
+    _apply_backend_result_backend(editor, result)
 
 
 def add_remove_clozes_button(buttons: List[str], editor: "Editor"):

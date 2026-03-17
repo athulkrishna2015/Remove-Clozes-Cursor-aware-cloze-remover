@@ -13,6 +13,7 @@ A powerful Anki editor enhancement that removes cloze formatting around the care
 - **Case-Insensitive**: Supports both `{{c1::...}}` and `{{C1::...}}`.
 - **Paste Strip**: Automatically removes cloze markup when pasting into non-cloze fields.
 - **Native Undo**: Uses atomic operations so `Ctrl+Z` works perfectly.
+- **Safe Backend Mode (Selection-only)**: Optional Python rewrite path to avoid MathJax preview duplication (no native undo for selections).
 - **Configuration UI**: Built-in settings dialog for hotkeys and options.
 - **Support Tab**: Integrated support page with QR codes for donations.
 
@@ -22,17 +23,18 @@ A powerful Anki editor enhancement that removes cloze formatting around the care
 - **Selection**: Select multiple clozes and press the hotkey to remove all of them at once.
 - **MathJax**: Works seamlessly with rendered MathJax in the editor.
 - **Paste**: Pasting `{{c1::text}}` into a normal field (without `cloze:`) automatically converts it to `text`.
+- **Safe Backend Mode**: Applies only to selections; collapsed selections fall back to the JS cursor-aware remover.
 
 ## Configuration
 Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
-- **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and enable Safe Backend Mode (selection-only, no DOM edits).
+- **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and enable Safe Backend Mode (selection-only, no DOM edits or native undo).
 - **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
 ## Known Issues
 - **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can duplicate rendered MathJax. This release strips rendered MathJax HTML from replacement content, but if you still encounter this:
   - Disable "MathJax Preview" from the card editor cog wheel.
   - Or disable "Process clozes inside MathJax elements" from the Add-on Config.
-  - Or enable **Safe Backend Mode** to avoid DOM edits (no native undo).
+  - Or enable **Safe Backend Mode** (selection-only; no native undo for selections).
 
 ## Changelog
 ### 2026-03-17
