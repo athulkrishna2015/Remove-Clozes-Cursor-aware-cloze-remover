@@ -25,7 +25,7 @@ A powerful Anki editor enhancement that removes cloze formatting around the care
 
 ## Configuration
 Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
-- **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and enable Safe Backend Mode (no DOM edits).
+- **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and enable Safe Backend Mode (selection-only, no DOM edits).
 - **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
 ## Known Issues

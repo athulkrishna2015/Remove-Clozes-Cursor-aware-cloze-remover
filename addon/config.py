@@ -53,7 +53,9 @@ class ConfigDialog(QDialog):
         layout.addWidget(self.mathjax_cb)
 
         # Safe backend mode
-        self.safe_backend_cb = QCheckBox("Safe backend mode (no DOM edits; slower, no native undo)")
+        self.safe_backend_cb = QCheckBox(
+            "Safe backend mode (selection-only; no DOM edits, no native undo)"
+        )
         self.safe_backend_cb.setChecked(self.config.get("safe_backend_mode", False))
         layout.addWidget(self.safe_backend_cb)
 

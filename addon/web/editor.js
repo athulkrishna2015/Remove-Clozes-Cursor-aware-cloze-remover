@@ -1134,6 +1134,7 @@ Cursor-aware, nested-safe cloze remover with native undo
       const start = editable.selectionStart;
       const end = editable.selectionEnd;
       if (start === null || end === null) return { changed: false };
+      if (start === end) return { changed: false, reason: "selection-collapsed" };
 
       const tmpDiv = document.createElement("div");
       tmpDiv.textContent = editable.value;
@@ -1143,6 +1144,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     }
 
     const range = selection.getRangeAt(0);
+    if (range.collapsed) return { changed: false, reason: "selection-collapsed" };
     const startIndex = getSourceIndexForBoundary(editable, range.startContainer, range.startOffset);
     const endIndex = getSourceIndexForBoundary(editable, range.endContainer, range.endOffset);
     if (startIndex < 0 || endIndex < 0) return { changed: false };

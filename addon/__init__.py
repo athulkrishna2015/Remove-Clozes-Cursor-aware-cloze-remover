@@ -194,7 +194,12 @@ def remove_clozes_backend(editor: "Editor"):
 def _apply_backend_result(editor: "Editor", result: Any) -> None:
     if not editor.web or not editor.note:
         return
-    if not isinstance(result, dict) or not result.get("changed"):
+    if not isinstance(result, dict):
+        return
+    if not result.get("changed"):
+        if result.get("reason") == "selection-collapsed":
+            editor.web.eval("removeClozes();")
+        return
         return
 
     if result.get("kind") == "textarea":
