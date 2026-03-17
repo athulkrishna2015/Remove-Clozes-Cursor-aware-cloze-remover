@@ -65,12 +65,16 @@ def load_addon_module(config: dict | None = None):
     sys.modules["aqt.gui_hooks"] = gui_hooks
 
     module_path = Path(__file__).resolve().parents[1] / "addon" / "__init__.py"
-    spec = importlib.util.spec_from_file_location("addon_module_under_test", module_path)
+    module_name = "addon_module_under_test"
+    spec = importlib.util.spec_from_file_location(
+        module_name, module_path, submodule_search_locations=[str(module_path.parent)]
+    )
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     assert spec.loader is not None
     # Mock .config import since it might fail in test env
-    sys.modules["addon_module_under_test.config"] = types.ModuleType("config")
-    sys.modules["addon_module_under_test.config"].init_config = lambda: None
+    sys.modules[f"{module_name}.config"] = types.ModuleType("config")
+    sys.modules[f"{module_name}.config"].init_config = lambda: None
     
     spec.loader.exec_module(module)
     return module

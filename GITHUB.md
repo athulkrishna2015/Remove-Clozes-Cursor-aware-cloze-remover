@@ -17,7 +17,9 @@ This repository contains the source code for the **Remove Clozes (Cursor-aware c
   - `Support/`: QR codes and assets for the Support tab.
   - `web/`: JavaScript files (`editor.js`) injected into Anki editor.
   - `__init__.py`: Add-on entry point, hooks into Anki.
+  - `backend.py`: Safe backend mode flow (selection-only Python rewrite).
   - `config.py`: Configuration UI logic (General and Support tabs).
+  - `config.md`: Config key reference for AnkiWeb.
   - `manifest.json`: Anki add-on metadata.
   - `VERSION`: Plain text file containing the current version.
 - `tests/`: Unit tests for Python hooks and configuration.
@@ -48,7 +50,23 @@ The project includes unit tests to verify the Python-side logic and configuratio
 python -m unittest discover tests
 ```
 
-### 3. Building and Releasing
+For JavaScript logic, open the browser-based test runner:
+```shell
+xdg-open tests/test_runner.html
+```
+If you are on Windows, open `tests\\test_runner.html` in a browser.
+
+### 3. Manual Verification Checklist
+Use this when validating fixes that touch selection handling or MathJax:
+- In the editor, test cursor-only removal inside a cloze (no selection).
+- In the editor, test selection removal spanning multiple clozes.
+- Toggle **MathJax Preview** on and repeat both tests.
+- Toggle **Safe Backend Mode** on and confirm:
+- Selection removal works and does not duplicate MathJax.
+- Cursor-only removal still uses JS and preserves behavior.
+- If testing in review with EFDRC, ensure the hotkey still works there.
+
+### 4. Building and Releasing
 To build locally:
 ```shell
 python make_ankiaddon.py
