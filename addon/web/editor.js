@@ -499,38 +499,12 @@ Cursor-aware, nested-safe cloze remover with native undo
   function removeAllClozesFromContainer(container) {
     let replaced = false;
 
-    // First unwrap clozes inside MathJax elements
-    const mathjaxElements = container.querySelectorAll("anki-mathjax");
-    for (const el of mathjaxElements) {
-      const formula = el.getAttribute("data-formula") || el.getAttribute("data-mathjax");
-      if (formula && formula.toLowerCase().includes("{{c")) {
-        const ranges = findAllClozeRanges(formula);
-        if (ranges.length) {
-          let newFormula = formula;
-          ranges.sort((a, b) => b.openStart - a.openStart);
-          for (const r of ranges) {
-            newFormula = newFormula.slice(0, r.openStart) + 
-                         newFormula.slice(r.textStart, r.textEnd) + 
-                         newFormula.slice(r.closeEnd);
-          }
-          
-          const newEl = el.cloneNode(true);
-          newEl.setAttribute("data-formula", newFormula);
-          if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
-          if (newEl.textContent === formula) {
-            newEl.textContent = newFormula;
-          }
-          el.replaceWith(newEl);
-          replaced = true;
-        }
-      }
-    }
-
     while (true) {
       const text = getEditableSourceText(container);
       const ranges = findAllClozeRanges(text);
       if (!ranges.length) break;
 
+      // Process the right-most cloze to keep indices stable for the next iteration
       let next = ranges[0];
       for (let i = 1; i < ranges.length; i++) {
         if (ranges[i].openStart > next.openStart) {
@@ -538,6 +512,45 @@ Cursor-aware, nested-safe cloze remover with native undo
         }
       }
 
+      // Check if this cloze is inside a MathJax element
+      const startInfo = mapSourceIndexToNodeOffset(container, next.openStart);
+      const mathjax = getClosestMatchingNode(startInfo.node, "anki-mathjax");
+
+      if (mathjax) {
+        const formula = mathjax.getAttribute("data-formula") || mathjax.getAttribute("data-mathjax") || "";
+        const source = getEditableSourceText(container);
+        const fullRepr = mathjax.classList.contains("mjx-block") 
+                         ? "\\[" + formula + "\\]" 
+                         : "\\(" + formula + "\\)";
+        const mjIdx = source.indexOf(fullRepr, Math.max(0, next.openStart - fullRepr.length - 10));
+        
+        if (mjIdx !== -1) {
+          const formulaContentStartInSource = mjIdx + 2;
+          const relOpen = next.openStart - formulaContentStartInSource;
+          const relText = next.textStart - formulaContentStartInSource;
+          const relEnd = next.textEnd - formulaContentStartInSource;
+          const relClose = next.closeEnd - formulaContentStartInSource;
+
+          if (relOpen >= 0 && relClose <= formula.length) {
+            const newFormula = formula.slice(0, relOpen) + 
+                               formula.slice(relText, relEnd) + 
+                               formula.slice(relClose);
+            
+            const newEl = mathjax.cloneNode(true);
+            newEl.setAttribute("data-formula", newFormula);
+            if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
+            // Clear internal HTML to prevent rendering duplication in undo stack
+            newEl.innerHTML = "";
+            if (newEl.textContent === formula) newEl.textContent = newFormula;
+            
+            mathjax.replaceWith(newEl);
+            replaced = true;
+            continue;
+          }
+        }
+      }
+
+      // Fallback: standard plain-text unwrapping
       if (!unwrapClozeInContainerByBounds(container, next)) {
         break;
       }
@@ -687,8 +700,9 @@ Cursor-aware, nested-safe cloze remover with native undo
           const newEl = mathjax.cloneNode(true);
           newEl.setAttribute("data-formula", newFormula);
           if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
-          // Do NOT set textContent; Anki will handle rendering from attributes.
-          // This prevents duplicate rendering artifacts.
+          // Clear internal HTML to prevent duplicate rendering artifacts in undo stack
+          newEl.innerHTML = "";
+          if (newEl.textContent === formula) newEl.textContent = newFormula;
 
           const range = document.createRange();
           range.setStartBefore(mathjax);
