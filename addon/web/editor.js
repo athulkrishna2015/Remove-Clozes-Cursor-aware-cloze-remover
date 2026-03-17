@@ -57,6 +57,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     removeClozesConfig.stripPastedClozesInNonClozeFields !== false;
   const processClozesInsideMathjax =
     removeClozesConfig.processClozesInsideMathjax !== false;
+  
   const reviewClozeFieldNames = Array.isArray(removeClozesConfig.reviewClozeFieldNames)
     ? new Set(removeClozesConfig.reviewClozeFieldNames)
     : null;
@@ -284,10 +285,10 @@ Cursor-aware, nested-safe cloze remover with native undo
   function getEditableDiv(root) {
     if (!root) return null;
     const active = root.activeElement || document.activeElement;
-    if (active && active.isContentEditable) {
+    if (active && (active.isContentEditable || active.tagName === "TEXTAREA")) {
       return active;
     }
-    return root.querySelector('[contenteditable="true"]');
+    return root.querySelector('[contenteditable="true"]') || root.querySelector('textarea');
   }
 
   // ==========================================
@@ -302,7 +303,7 @@ Cursor-aware, nested-safe cloze remover with native undo
         acceptNode(node) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const tag = node.tagName.toUpperCase();
-            if ((processClozesInsideMathjax && tag === "ANKI-MATHJAX") || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
             return NodeFilter.FILTER_SKIP;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -315,11 +316,16 @@ Cursor-aware, nested-safe cloze remover with native undo
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.tagName.toUpperCase() === "ANKI-MATHJAX") {
-        const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
-        if (node.classList.contains("mjx-block")) {
-          text += "\\[" + formula + "\\]";
+        if (processClozesInsideMathjax) {
+          const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
+          if (node.classList.contains("mjx-block")) {
+            text += "\\[" + formula + "\\]";
+          } else {
+            text += "\\(" + formula + "\\)";
+          }
         } else {
-          text += "\\(" + formula + "\\)";
+          // Treat as a single atomic character placeholder to keep indices stable
+          text += "\uFFFC"; 
         }
       } else if (node.tagName.toUpperCase() === "BR") {
         text += "\n";
@@ -336,7 +342,7 @@ Cursor-aware, nested-safe cloze remover with native undo
         acceptNode(node) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const tag = node.tagName.toUpperCase();
-            if ((processClozesInsideMathjax && tag === "ANKI-MATHJAX") || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
             return NodeFilter.FILTER_SKIP;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -357,9 +363,13 @@ Cursor-aware, nested-safe cloze remover with native undo
       if (node.nodeType === Node.TEXT_NODE) {
         len = node.textContent.length;
       } else if (tag === "ANKI-MATHJAX") {
-        const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
-        const delimLen = 4; // \( and \) or \[ and \]
-        len = formula.length + delimLen;
+        if (processClozesInsideMathjax) {
+          const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
+          const delimLen = 4; // \( and \) or \[ and \]
+          len = formula.length + delimLen;
+        } else {
+          len = 1; // Length of the \uFFFC placeholder
+        }
       } else if (tag === "BR") {
         len = 1;
       }
@@ -391,17 +401,18 @@ Cursor-aware, nested-safe cloze remover with native undo
     // Handle Shadow DOM (Rendered MathJax)
     // Standard Ranges cannot cross shadow boundaries. If we are inside, we climb to host.
     let current = node;
-    while (processClozesInsideMathjax && current && current !== container) {
+    while (current && current !== container) {
       const root = current.getRootNode ? current.getRootNode() : null;
       if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE && root.host) {
         const host = root.host;
         if (host.tagName.toUpperCase() === "ANKI-MATHJAX") {
-          // We are inside rendered math. Map cursor to just after \( delimiter.
+          // We are inside rendered math. Map cursor to just after delimiter or placeholder.
           const lightRange = document.createRange();
           lightRange.setStartBefore(container.firstChild || container);
           lightRange.setEndBefore(host);
           const frag = lightRange.cloneContents();
-          return getEditableSourceText(frag).length + 2;
+          const offsetBefore = getEditableSourceText(frag).length;
+          return processClozesInsideMathjax ? offsetBefore + 2 : offsetBefore;
         }
         current = host;
       } else {
@@ -781,15 +792,27 @@ Cursor-aware, nested-safe cloze remover with native undo
       range = tmp;
     }
 
-    const pos = getCursorIndexInSource(editable, sel);
+    const pos = editable.tagName === "TEXTAREA" ? editable.selectionStart : getCursorIndexInSource(editable, sel);
     if (pos < 0) return;
 
-    const text = getEditableSourceText(editable);
+    const text = editable.tagName === "TEXTAREA" ? editable.value : getEditableSourceText(editable);
     const bounds = findInnermostClozeAt(text, pos);
     if (!bounds) return;
 
-    const replaced = replaceClozeByBounds(root, editable, bounds);
-    if (!replaced) return;
+    if (editable.tagName === "TEXTAREA") {
+      const start = bounds.openStart;
+      const end = bounds.closeEnd;
+      const content = text.slice(bounds.textStart, bounds.textEnd);
+      
+      // Standard textarea replacement
+      const before = editable.value.slice(0, start);
+      const after = editable.value.slice(end);
+      editable.value = before + content + after;
+      editable.selectionStart = editable.selectionEnd = start + content.length;
+    } else {
+      const replaced = replaceClozeByBounds(root, editable, bounds);
+      if (!replaced) return;
+    }
 
     // Notify Anki
     notifyInput(editable);
@@ -803,6 +826,34 @@ Cursor-aware, nested-safe cloze remover with native undo
     if (editable.focus) editable.focus();
 
     const sel = root.getSelection ? root.getSelection() : document.getSelection();
+    
+    // Handle Textarea (MathJax Editor Popup)
+    if (editable.tagName === "TEXTAREA") {
+      const start = editable.selectionStart;
+      const end = editable.selectionEnd;
+      if (start === end) {
+        removeClozeAtCursor();
+        return;
+      }
+      
+      const selectionText = editable.value.slice(start, end);
+      const tmpDiv = document.createElement("div");
+      tmpDiv.textContent = selectionText;
+      
+      const replaced = removeAllClozesFromContainer(tmpDiv);
+      if (!replaced) return;
+      
+      const before = editable.value.slice(0, start);
+      const after = editable.value.slice(end);
+      const newContent = tmpDiv.textContent;
+      editable.value = before + newContent + after;
+      editable.selectionStart = start;
+      editable.selectionEnd = start + newContent.length;
+      
+      notifyInput(editable);
+      return;
+    }
+
     if (!sel || sel.rangeCount === 0) return;
 
     let range = sel.getRangeAt(0);
