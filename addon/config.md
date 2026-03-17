@@ -10,8 +10,14 @@
 
 (boolean): When enabled, the add-on attempts to process and remove clozes found inside MathJax formulas. Disabling this can prevent certain rendering artifacts (like duplication on Undo) in some Anki versions. Default: `true`
 
-### `safe_backend_mode`
+### `backend_mode`
 
-(boolean): When enabled, cloze removal for selections is handled by Python using the field HTML instead of DOM edits. Collapsed selections fall back to the JS cursor-aware remover. This avoids MathJax preview duplication at the cost of native undo and selection preservation for selections. Default: `false`
+(string): Controls which backend handles cloze removal.
+
+- `auto` (default): Uses Python only when the current selection touches MathJax, otherwise uses JavaScript.
+- `javascript`: Always use JavaScript (best native undo and cursor preservation).
+- `python`: Always use Python (avoids MathJax duplication but loses native undo for selections).
+
+Legacy keys `safe_backend_mode` and `safe_backend_auto_mode` are still respected if `backend_mode` is not set.
 
 ---

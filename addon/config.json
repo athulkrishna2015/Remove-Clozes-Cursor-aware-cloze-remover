@@ -2,5 +2,5 @@
     "hotkey": "Ctrl+Alt+Shift+R",
     "strip_pasted_clozes_in_non_cloze_fields": true,
     "process_clozes_inside_mathjax": true,
-    "safe_backend_mode": false
+    "backend_mode": "auto"
 }

@@ -34,6 +34,7 @@ class ConfigDialog(QDialog):
     def create_general_tab(self):
         tab = QWidget()
         layout = QVBoxLayout()
+        backend_mode = self._normalized_backend_mode()
 
         # Hotkey
         hotkey_layout = QHBoxLayout()
@@ -52,12 +53,18 @@ class ConfigDialog(QDialog):
         self.mathjax_cb.setChecked(self.config.get("process_clozes_inside_mathjax", True))
         layout.addWidget(self.mathjax_cb)
 
-        # Safe backend mode
-        self.safe_backend_cb = QCheckBox(
-            "Safe backend mode (selection-only; no DOM edits, no native undo)"
+        # Backend mode
+        backend_layout = QHBoxLayout()
+        backend_layout.addWidget(QLabel("Backend mode:"))
+        self.backend_mode_combo = QComboBox()
+        self.backend_mode_combo.addItem("Auto (MathJax selections only)", "auto")
+        self.backend_mode_combo.addItem("JavaScript (native undo)", "javascript")
+        self.backend_mode_combo.addItem("Python (safe backend)", "python")
+        self.backend_mode_combo.setCurrentIndex(
+            max(0, self.backend_mode_combo.findData(backend_mode))
         )
-        self.safe_backend_cb.setChecked(self.config.get("safe_backend_mode", False))
-        layout.addWidget(self.safe_backend_cb)
+        backend_layout.addWidget(self.backend_mode_combo)
+        layout.addLayout(backend_layout)
 
         layout.addStretch()
         tab.setLayout(layout)
@@ -123,9 +130,24 @@ class ConfigDialog(QDialog):
         self.config["hotkey"] = self.hotkey_input.text()
         self.config["strip_pasted_clozes_in_non_cloze_fields"] = self.strip_cb.isChecked()
         self.config["process_clozes_inside_mathjax"] = self.mathjax_cb.isChecked()
-        self.config["safe_backend_mode"] = self.safe_backend_cb.isChecked()
+        self.config["backend_mode"] = self.backend_mode_combo.currentData()
+        self.config.pop("safe_backend_mode", None)
+        self.config.pop("safe_backend_auto_mode", None)
         mw.addonManager.writeConfig(ADDON_NAME, self.config)
         self.accept()
+
+    def _normalized_backend_mode(self) -> str:
+        mode = self.config.get("backend_mode")
+        if isinstance(mode, str) and mode in {"auto", "javascript", "python"}:
+            return mode
+
+        legacy_safe = self.config.get("safe_backend_mode", False)
+        legacy_auto = self.config.get("safe_backend_auto_mode", True)
+        if isinstance(legacy_safe, bool) and legacy_safe:
+            if isinstance(legacy_auto, bool) and legacy_auto:
+                return "auto"
+            return "python"
+        return "javascript"
 
 def on_config():
     ConfigDialog(mw).exec()

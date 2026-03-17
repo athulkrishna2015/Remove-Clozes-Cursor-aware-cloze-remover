@@ -269,6 +269,19 @@ Cursor-aware, nested-safe cloze remover with native undo
     });
   }
 
+  function serializeFieldHTML(container) {
+    const clone = container.cloneNode(true);
+    const mathjaxNodes = clone.querySelectorAll("anki-mathjax");
+    mathjaxNodes.forEach((node) => {
+      const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
+      const text = node.classList.contains("mjx-block")
+        ? "\\[" + formula + "\\]"
+        : "\\(" + formula + "\\)";
+      node.replaceWith(document.createTextNode(text));
+    });
+    return clone.innerHTML;
+  }
+
   function getActiveFieldIndex(editable) {
     const container = getClosestMatchingNode(editable, ".field-container");
     if (!container) return null;
@@ -1156,7 +1169,41 @@ Cursor-aware, nested-safe cloze remover with native undo
 
     const fieldIndex = getActiveFieldIndex(editable);
     if (fieldIndex === null) return { changed: false };
-    return { changed: true, fieldIndex, html: tmpDiv.innerHTML };
+    return { changed: true, fieldIndex, html: serializeFieldHTML(tmpDiv) };
+  };
+
+  window.removeClozesShouldUseBackend = function () {
+    if (!getProcessClozesInsideMathjax()) {
+      return { useBackend: false, reason: "mathjax-processing-disabled" };
+    }
+
+    const root = getActiveRoot();
+    const editable = getEditableDiv(root);
+    if (!editable) return { useBackend: false, reason: "no-editable" };
+
+    const selection = root.getSelection ? root.getSelection() : document.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return { useBackend: false, reason: "no-selection" };
+    }
+
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) {
+      return { useBackend: false, reason: "selection-collapsed" };
+    }
+
+    if (getClosestMatchingNode(range.startContainer, "anki-mathjax")) {
+      return { useBackend: true, reason: "start-in-mathjax" };
+    }
+    if (getClosestMatchingNode(range.endContainer, "anki-mathjax")) {
+      return { useBackend: true, reason: "end-in-mathjax" };
+    }
+
+    const frag = range.cloneContents();
+    if (frag && frag.querySelector && frag.querySelector("anki-mathjax")) {
+      return { useBackend: true, reason: "selection-contains-mathjax" };
+    }
+
+    return { useBackend: false, reason: "no-mathjax" };
   };
 
   window.applyRemoveClozesTextarea = function (value) {

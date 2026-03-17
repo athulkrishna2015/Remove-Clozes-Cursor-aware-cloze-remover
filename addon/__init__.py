@@ -81,9 +81,21 @@ def _configured_bool(key: str, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
 
-def _safe_backend_mode() -> bool:
-    return _configured_bool("safe_backend_mode", False)
+def _backend_mode() -> str:
+    config = _addon_config()
+    mode = config.get("backend_mode")
+    if isinstance(mode, str):
+        mode = mode.lower()
+        if mode in {"auto", "javascript", "python"}:
+            return mode
 
+    legacy_safe = config.get("safe_backend_mode", False)
+    legacy_auto = config.get("safe_backend_auto_mode", True)
+    if isinstance(legacy_safe, bool) and legacy_safe:
+        if isinstance(legacy_auto, bool) and legacy_auto:
+            return "auto"
+        return "python"
+    return "javascript"
 
 def _review_contexts() -> Tuple[type, ...]:
     contexts: List[type] = []
@@ -153,7 +165,7 @@ def inject_editor_script(web_content: "WebContent", context: Any):
         "processClozesInsideMathjax": _configured_bool(
             "process_clozes_inside_mathjax", True
         ),
-        "safeBackendMode": _safe_backend_mode(),
+        "backendMode": _backend_mode(),
         "reviewClozeFieldNames": _review_cloze_field_names(context),
     }
     should_inject = isinstance(context, Editor)
@@ -173,10 +185,24 @@ def remove_clozes(editor: "Editor"):
     """Remove cloze markers and hints from selected text"""
     if not editor.web:
         return
-    if _safe_backend_mode():
-        remove_clozes_backend(editor)
-    else:
+    mode = _backend_mode()
+    if mode == "javascript":
         editor.web.eval("removeClozes();")
+        return
+    if mode == "python":
+        remove_clozes_backend(editor)
+        return
+
+    def on_decision(result: Any) -> None:
+        if isinstance(result, dict) and result.get("useBackend"):
+            remove_clozes_backend(editor)
+        else:
+            editor.web.eval("removeClozes();")
+
+    editor.web.evalWithCallback(
+        "window.removeClozesShouldUseBackend && window.removeClozesShouldUseBackend();",
+        on_decision,
+    )
 
 
 def remove_clozes_backend(editor: "Editor"):
