@@ -3,7 +3,7 @@
     "package": "remove_clozes",
     "ankiweb_id": "836994508",
     "author": "Glutanimate",
-    "version": "2.5",
+    "version": "2.6",
     "homepage": "https://github.com/glutanimate/remove-clozes",
     "conflicts": [
         "836994508"
