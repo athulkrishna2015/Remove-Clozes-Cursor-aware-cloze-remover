@@ -37,6 +37,9 @@ from aqt import mw
 from aqt.editor import Editor
 from aqt.gui_hooks import editor_did_init_buttons, webview_will_set_content
 
+from .config import init_config
+init_config()
+
 try:
     from aqt.reviewer import Reviewer
 except ImportError:

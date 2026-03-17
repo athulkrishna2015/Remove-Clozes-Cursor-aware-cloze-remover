@@ -49,6 +49,9 @@ Cursor-aware, nested-safe cloze remover with native undo
 */
 
 (function () {
+  // ==========================================
+  // 1. CONFIGURATION & STATE
+  // ==========================================
   const removeClozesConfig = window.RemoveClozesConfig || {};
   const stripPastedClozesInNonClozeFields =
     removeClozesConfig.stripPastedClozesInNonClozeFields !== false;
@@ -57,6 +60,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     : null;
   let editorClozeFields = null;
 
+  // ==========================================
+  // 2. SHORTCUTS & HOTKEYS
+  // ==========================================
   function parseShortcut(shortcut) {
     if (!shortcut || typeof shortcut !== "string") return null;
     const keys = shortcut.toLowerCase().split(/[+]/).map((k) => k.trim()).filter(Boolean);
@@ -114,6 +120,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     window.__removeClozesReviewShortcutBound = true;
   }
 
+  // ==========================================
+  // 3. UTILITIES & HELPERS
+  // ==========================================
   function interceptWindowFunction(name, beforeCall) {
     const wrap = function (fn) {
       if (typeof fn !== "function" || fn.__removeClozesWrapped) {
@@ -162,6 +171,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     }
   }
 
+  // ==========================================
+  // 4. DOM & SELECTION HELPERS
+  // ==========================================
   function getRootSelection(root) {
     return root && root.getSelection ? root.getSelection() : document.getSelection();
   }
@@ -220,6 +232,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     return getEditableDiv(root);
   }
 
+  // ==========================================
+  // 5. FIELD & CONTEXT CHECKING
+  // ==========================================
   function editorFieldUsesClozeFilter(editable) {
     if (!Array.isArray(editorClozeFields)) return null;
 
@@ -273,96 +288,196 @@ Cursor-aware, nested-safe cloze remover with native undo
     return root.querySelector('[contenteditable="true"]');
   }
 
-  function mapIndexToNodeOffset(container, idx) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    let node = walker.nextNode();
+  // ==========================================
+  // 6. SOURCE TEXT & MAPPING (MATHJAX)
+  // ==========================================
+  function getEditableSourceText(container) {
+    let text = "";
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(node) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName.toUpperCase();
+            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            return NodeFilter.FILTER_SKIP;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      }
+    );
+
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.tagName.toUpperCase() === "ANKI-MATHJAX") {
+        const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
+        if (node.classList.contains("mjx-block")) {
+          text += "\\[" + formula + "\\]";
+        } else {
+          text += "\\(" + formula + "\\)";
+        }
+      } else if (node.tagName.toUpperCase() === "BR") {
+        text += "\n";
+      }
+    }
+    return text;
+  }
+
+  function mapSourceIndexToNodeOffset(container, idx) {
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(node) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const tag = node.tagName.toUpperCase();
+            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            return NodeFilter.FILTER_SKIP;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      }
+    );
+
+    let node;
     let remaining = idx;
-    while (node) {
-      const len = node.textContent.length;
-      // At exact text-node boundaries, prefer the next text node start.
-      // This avoids expanding replacements into previous paragraphs/lines.
+    const nodes = [];
+    while ((node = walker.nextNode())) {
+      nodes.push(node);
+    }
+
+    for (const node of nodes) {
+      let len = 0;
+      const tag = node.nodeType === Node.ELEMENT_NODE ? node.tagName.toUpperCase() : "";
+      if (node.nodeType === Node.TEXT_NODE) {
+        len = node.textContent.length;
+      } else if (tag === "ANKI-MATHJAX") {
+        const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
+        const delimLen = 4; // \( and \) or \[ and \]
+        len = formula.length + delimLen;
+      } else if (tag === "BR") {
+        len = 1;
+      }
+
       if (remaining < len) {
-        return { node, offset: remaining };
+        if (node.nodeType === Node.TEXT_NODE) {
+          return { node, offset: remaining };
+        }
+        if (tag === "ANKI-MATHJAX") {
+          return { node, offset: remaining };
+        }
+        // For other atomic elements (BR), return position before/after based on remaining
+        const parent = node.parentNode;
+        const index = Array.from(parent.childNodes).indexOf(node);
+        return { node: parent, offset: remaining === 0 ? index : index + 1 };
       }
       remaining -= len;
-      node = walker.nextNode();
     }
     return { node: container, offset: container.childNodes.length };
   }
 
-  function getCursorIndexInText(container, selection) {
+  function getCursorIndexInSource(container, selection) {
     if (!selection || selection.rangeCount === 0) return -1;
 
-    // Avoid inserting temporary marker text into the DOM; that can pollute undo history.
-    const startNode =
-      container && container.nodeType === Node.DOCUMENT_NODE
-        ? (container.body || container.documentElement)
-        : container;
-    if (!startNode) return -1;
+    let range = selection.getRangeAt(0);
+    let node = range.startContainer;
+    let offset = range.startOffset;
 
-    const range = selection.getRangeAt(0);
+    // Handle Shadow DOM (Rendered MathJax)
+    // Standard Ranges cannot cross shadow boundaries. If we are inside, we climb to host.
+    let current = node;
+    while (current && current !== container) {
+      const root = current.getRootNode ? current.getRootNode() : null;
+      if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE && root.host) {
+        const host = root.host;
+        if (host.tagName.toUpperCase() === "ANKI-MATHJAX") {
+          // We are inside rendered math. Map cursor to just after \( delimiter.
+          const lightRange = document.createRange();
+          lightRange.setStartBefore(container.firstChild || container);
+          lightRange.setEndBefore(host);
+          const frag = lightRange.cloneContents();
+          return getEditableSourceText(frag).length + 2;
+        }
+        current = host;
+      } else {
+        break;
+      }
+    }
+
     const preCaretRange = range.cloneRange();
-    preCaretRange.selectNodeContents(startNode);
     try {
-      preCaretRange.setEnd(range.startContainer, range.startOffset);
+      preCaretRange.setStartBefore(container.firstChild || container);
+      preCaretRange.setEnd(node, offset);
     } catch (e) {
       return -1;
     }
 
-    const tmp = document.createElement("div");
-    tmp.appendChild(preCaretRange.cloneContents());
-    return (tmp.textContent || "").length;
+    const frag = preCaretRange.cloneContents();
+    return getEditableSourceText(frag).length;
   }
 
+  // ==========================================
+  // 7. STRING PARSING & CLOZE MATH
+  // ==========================================
   function findAllClozeRanges(text) {
     const ranges = [];
-    const stack = [];
-
-    for (let i = 0; i < text.length; i++) {
-      if (text.startsWith("{{c", i)) {
-        const mm = text.slice(i).match(/^\{\{c\d+::/);
+    let i = 0;
+    while (i < text.length) {
+      if (text.toLowerCase().startsWith("{{c", i)) {
+        const mm = text.slice(i).match(/^\{\{c\d+::/i);
         if (mm) {
-          stack.push({
-            openStart: i,
-            textStart: i + mm[0].length,
-            hintStart: null,
-          });
-          i += mm[0].length - 1;
-          continue;
+          const start = i;
+          let j = i + mm[0].length;
+          let depth = 0;
+          let hintStart = null;
+          while (j < text.length) {
+            if (depth === 0 && text.startsWith("::", j) && hintStart === null) {
+              hintStart = j;
+              j += 2;
+              continue;
+            }
+            if (depth === 0 && text.startsWith("}}", j)) {
+              ranges.push({
+                openStart: start,
+                textStart: start + mm[0].length,
+                textEnd: hintStart !== null ? hintStart : j,
+                closeEnd: j + 2,
+              });
+              i = j + 1; // outer loop will increment
+              break;
+            }
+            const ch = text[j];
+            if (ch === "{") depth++;
+            else if (ch === "}" && depth > 0) depth--;
+            j++;
+          }
+          if (j >= text.length) i = text.length;
         }
       }
-
-      if (stack.length && text.startsWith("::", i)) {
-        const top = stack[stack.length - 1];
-        if (top.hintStart === null) {
-          top.hintStart = i;
-        }
-        i++;
-        continue;
-      }
-
-      if (stack.length && text.startsWith("}}", i)) {
-        const top = stack.pop();
-        const textEnd = top.hintStart !== null ? top.hintStart : i;
-        ranges.push({
-          openStart: top.openStart,
-          textStart: top.textStart,
-          textEnd,
-          closeEnd: i + 2,
-        });
-        i++;
-      }
+      i++;
     }
-
     return ranges;
   }
 
+  function findInnermostClozeAt(text, pos) {
+    const all = findAllClozeRanges(text);
+    const candidates = all.filter(r => pos >= r.openStart && pos <= r.closeEnd);
+    if (!candidates.length) return null;
+    return candidates.reduce((a, b) => (b.closeEnd - b.openStart < a.closeEnd - a.openStart ? b : a));
+  }
+
+  // ==========================================
+  // 8. ACTION & REPLACEMENT LOGIC
+  // ==========================================
   function unwrapClozeInContainerByBounds(container, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
-    const innerStartPos = mapIndexToNodeOffset(container, textStart);
-    const innerEndPos = mapIndexToNodeOffset(container, textEnd);
-    const outerStartPos = mapIndexToNodeOffset(container, openStart);
-    const outerEndPos = mapIndexToNodeOffset(container, closeEnd);
+    const innerStartPos = mapSourceIndexToNodeOffset(container, textStart);
+    const innerEndPos = mapSourceIndexToNodeOffset(container, textEnd);
+    const outerStartPos = mapSourceIndexToNodeOffset(container, openStart);
+    const outerEndPos = mapSourceIndexToNodeOffset(container, closeEnd);
 
     const innerRange = document.createRange();
     innerRange.setStart(innerStartPos.node, innerStartPos.offset);
@@ -384,12 +499,38 @@ Cursor-aware, nested-safe cloze remover with native undo
   function removeAllClozesFromContainer(container) {
     let replaced = false;
 
+    // First unwrap clozes inside MathJax elements
+    const mathjaxElements = container.querySelectorAll("anki-mathjax");
+    for (const el of mathjaxElements) {
+      const formula = el.getAttribute("data-formula") || el.getAttribute("data-mathjax");
+      if (formula && formula.toLowerCase().includes("{{c")) {
+        const ranges = findAllClozeRanges(formula);
+        if (ranges.length) {
+          let newFormula = formula;
+          ranges.sort((a, b) => b.openStart - a.openStart);
+          for (const r of ranges) {
+            newFormula = newFormula.slice(0, r.openStart) + 
+                         newFormula.slice(r.textStart, r.textEnd) + 
+                         newFormula.slice(r.closeEnd);
+          }
+          
+          const newEl = el.cloneNode(true);
+          newEl.setAttribute("data-formula", newFormula);
+          if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
+          if (newEl.textContent === formula) {
+            newEl.textContent = newFormula;
+          }
+          el.replaceWith(newEl);
+          replaced = true;
+        }
+      }
+    }
+
     while (true) {
-      const text = container.textContent || "";
+      const text = getEditableSourceText(container);
       const ranges = findAllClozeRanges(text);
       if (!ranges.length) break;
 
-      // Right-most first keeps indices stable as we unwrap repeatedly.
       let next = ranges[0];
       for (let i = 1; i < ranges.length; i++) {
         if (ranges[i].openStart > next.openStart) {
@@ -407,11 +548,11 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function stripClozesFromHTML(html) {
-    if (!html || !html.includes("{{c")) return null;
+    if (!html || !html.toLowerCase().includes("{{c")) return null;
 
     const tmpDiv = document.createElement("div");
     tmpDiv.innerHTML = html;
-    if (!findAllClozeRanges(tmpDiv.textContent || "").length) {
+    if (!findAllClozeRanges(getEditableSourceText(tmpDiv)).length) {
       return null;
     }
 
@@ -419,11 +560,11 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function stripClozesFromText(text) {
-    if (!text || !text.includes("{{c")) return null;
+    if (!text || !text.toLowerCase().includes("{{c")) return null;
 
     const tmpDiv = document.createElement("div");
     tmpDiv.textContent = text;
-    if (!findAllClozeRanges(tmpDiv.textContent || "").length) {
+    if (!findAllClozeRanges(getEditableSourceText(tmpDiv)).length) {
       return null;
     }
 
@@ -517,10 +658,54 @@ Cursor-aware, nested-safe cloze remover with native undo
   function replaceClozeByBounds(root, editable, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
 
-    const innerStartPos = mapIndexToNodeOffset(editable, textStart);
-    const innerEndPos = mapIndexToNodeOffset(editable, textEnd);
-    const outerStartPos = mapIndexToNodeOffset(editable, openStart);
-    const outerEndPos = mapIndexToNodeOffset(editable, closeEnd);
+    const startInfo = mapSourceIndexToNodeOffset(editable, openStart);
+    
+    const mathjax = getClosestMatchingNode(startInfo.node, "anki-mathjax");
+    if (mathjax) {
+      const formula = mathjax.getAttribute("data-formula") || mathjax.getAttribute("data-mathjax") || "";
+      const source = getEditableSourceText(editable);
+      const fullRepr = mathjax.classList.contains("mjx-block") 
+                       ? "\\[" + formula + "\\]" 
+                       : "\\(" + formula + "\\)";
+      const mjIdx = source.indexOf(fullRepr, Math.max(0, openStart - fullRepr.length - 10));
+      
+      if (mjIdx !== -1) {
+        const formulaContentStartInSource = mjIdx + 2;
+        const relOpen = openStart - formulaContentStartInSource;
+        const relText = textStart - formulaContentStartInSource;
+        const relEnd = textEnd - formulaContentStartInSource;
+        const relClose = closeEnd - formulaContentStartInSource;
+
+        if (relOpen >= 0 && relClose <= formula.length) {
+          const newFormula = formula.slice(0, relOpen) + 
+                             formula.slice(relText, relEnd) + 
+                             formula.slice(relClose);
+          
+          const newEl = mathjax.cloneNode(true);
+          newEl.setAttribute("data-formula", newFormula);
+          if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
+          if (newEl.textContent === formula) newEl.textContent = newFormula;
+
+          const range = document.createRange();
+          range.selectNode(mathjax);
+          const sel = getRootSelection(root);
+          sel.removeAllRanges();
+          sel.addRange(range);
+
+          if (canUseCommand("insertHTML")) {
+            document.execCommand("insertHTML", false, newEl.outerHTML);
+          } else {
+            mathjax.replaceWith(newEl);
+          }
+          return true;
+        }
+      }
+    }
+
+    const innerStartPos = mapSourceIndexToNodeOffset(editable, textStart);
+    const innerEndPos = mapSourceIndexToNodeOffset(editable, textEnd);
+    const outerStartPos = mapSourceIndexToNodeOffset(editable, openStart);
+    const outerEndPos = mapSourceIndexToNodeOffset(editable, closeEnd);
 
     const innerRange = document.createRange();
     innerRange.setStart(innerStartPos.node, innerStartPos.offset);
@@ -543,78 +728,14 @@ Cursor-aware, nested-safe cloze remover with native undo
       document.execCommand("insertHTML", false, innerHTML);
       collapseSelectionToEnd(editSel);
     } else {
-      // Fallback (may not integrate with undo)
       outerRange.deleteContents();
       const frag = outerRange.createContextualFragment(innerHTML);
       outerRange.insertNode(frag);
-      if (editSel.removeAllRanges) {
-        editSel.removeAllRanges();
-        const endIdx = openStart + (textEnd - textStart);
-        const caretPos = mapIndexToNodeOffset(editable, endIdx);
-        const caretRange = document.createRange();
-        caretRange.setStart(caretPos.node, caretPos.offset);
-        caretRange.collapse(true);
-        editSel.addRange(caretRange);
-      }
+      // Fallback caret positioning (simple)
+      editSel.removeAllRanges();
     }
 
     return true;
-  }
-
-  // Find the innermost cloze whose opener/contents contain `pos`
-  // Returns { openStart, textStart, textEnd, closeEnd } or null
-  function findInnermostClozeAt(text, pos) {
-    const openRe = /\{\{c(\d+)::/g;
-    let candidates = [];
-    // Collect openers up to the cursor position by openStart (not textStart)
-    for (let m; (m = openRe.exec(text)); ) {
-      const openStart = m.index;
-      const textStart = openRe.lastIndex; // just after '::'
-      if (openStart > pos) break; // any further opener starts after cursor
-      candidates.push({ openStart, textStart });
-    }
-    // Test candidates from inner to outer
-    for (let i = candidates.length - 1; i >= 0; i--) {
-      const { openStart, textStart } = candidates[i];
-      let depth = 1;
-      let hintStart = null;
-      for (let j = textStart; j < text.length; j++) {
-        // Detect nested openers {{c<digits>::...
-        if (text.startsWith("{{c", j)) {
-          const mm = text.slice(j).match(/^\{\{c\d+::/);
-          if (mm) {
-            depth++;
-            j += mm[0].length - 1;
-            continue;
-          }
-        }
-        // Detect top-level hint separator :: at depth 1
-        if (depth === 1 && text.startsWith("::", j)) {
-          if (hintStart === null) {
-            hintStart = j;
-          }
-          j++; // skip second ':'
-          continue;
-        }
-        // Detect closers }}
-        if (text.startsWith("}}", j)) {
-          depth--;
-          if (depth === 0) {
-            const closeEnd = j + 2;
-            // Treat positions inside opener (openStart..textStart) as inside this cloze
-            const contains = pos >= openStart && pos <= closeEnd;
-            if (contains) {
-              const textEnd = hintStart !== null ? hintStart : j;
-              return { openStart, textStart, textEnd, closeEnd };
-            } else {
-              break; // cursor not inside this candidate
-            }
-          }
-          j++; // skip second '}'
-        }
-      }
-    }
-    return null;
   }
 
   function removeClozeAtCursor() {
@@ -627,8 +748,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     const sel = root.getSelection ? root.getSelection() : document.getSelection();
     if (!sel || sel.rangeCount === 0) return;
 
-    // Collapse selection to start to avoid deleting parent cloze when nested
     let range = sel.getRangeAt(0);
+
+    // Collapse selection to start to avoid deleting parent cloze when nested
     if (!range.collapsed) {
       const tmp = range.cloneRange();
       tmp.collapse(true);
@@ -637,10 +759,10 @@ Cursor-aware, nested-safe cloze remover with native undo
       range = tmp;
     }
 
-    const pos = getCursorIndexInText(editable, sel);
+    const pos = getCursorIndexInSource(editable, sel);
     if (pos < 0) return;
 
-    const text = editable.textContent;
+    const text = getEditableSourceText(editable);
     const bounds = findInnermostClozeAt(text, pos);
     if (!bounds) return;
 
@@ -672,7 +794,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     const tmpDiv = document.createElement("div");
     tmpDiv.appendChild(frag);
 
-    if (!findAllClozeRanges(tmpDiv.textContent || "").length) {
+    if (!findAllClozeRanges(getEditableSourceText(tmpDiv)).length) {
       // No clozes fully inside the selection; fall back to cursor-based removal.
       removeClozeAtCursor();
       return;
@@ -707,6 +829,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     notifyInput(editable);
   }
 
+  // ==========================================
+  // 9. EVENT LISTENERS & SETUP
+  // ==========================================
   interceptWindowFunction("setClozeFields", function (fields) {
     editorClozeFields = Array.isArray(fields) ? fields.map(Boolean) : null;
   });
@@ -714,6 +839,18 @@ Cursor-aware, nested-safe cloze remover with native undo
   // Public API expected by the add-on’s Python side and hotkey
   window.removeClozes = function () {
     removeClozesInSelection();
+  };
+
+  // Export internal functions for unit testing
+  window._RemoveClozesTestAPI = {
+    findAllClozeRanges,
+    findInnermostClozeAt,
+    getEditableSourceText,
+    mapSourceIndexToNodeOffset,
+    stripClozesFromHTML,
+    stripClozesFromText,
+    removeAllClozesFromContainer,
+    replaceClozeByBounds,
   };
 
   installPasteHandlerIfNeeded();

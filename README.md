@@ -1,48 +1,40 @@
 # [Remove Clozes — Cursor‑aware and Selection-based cloze remover ](https://github.com/athulkrishna2015/Remove-Clozes-Cursor-aware-cloze-remover)
 
-[install via anki web](https://ankiweb.net/shared/info/232855722)
+[Install via AnkiWeb (Add-on ID 836994508)](https://ankiweb.net/shared/info/836994508)
 
-A small Anki editor enhancement that removes cloze formatting around the caret or within a selection, and can also strip cloze markup from pasted content in non-cloze fields, while correctly handling nested clozes, optional hints, inline formatting, and native undo support. 
-Pairs well with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438) for in-review field editing workflows.
+A powerful Anki editor enhancement that removes cloze formatting around the caret or within a selection. It correctly handles nested clozes, MathJax, and can strip cloze markup from pasted content in non-cloze fields.
 
 ## Features
-- Removes all clozes found within a selected block of text.
-- Removes only the innermost cloze that contains the caret if no text is selected. 
-- Automatically removes pasted cloze markup in fields that do not use the `cloze:` filter.
-- Correctly skips over nested clozes to find the matching closing braces for the current cloze. 
-- Treats the caret inside the opener `{{cN::` as inside that cloze, not the parent. 
-- Drops optional hint/comments (e.g., `::hint`) at the current cloze level. 
-- Preserves inline formatting inside the cloze’s main text. 
-- Performs a single atomic edit using insertHTML so Ctrl+Z works as expected. 
+- **Cursor-Aware**: Removes only the innermost cloze enclosing the caret.
+- **Selection-Based**: Removes all clozes found within a selected block of text.
+- **MathJax Support**: Works inside MathJax elements (e.g., `\({{c1::text}}\)`). Handles complex MathJax with nested braces (`\text{...{...}}`) by using depth-aware parsing.
+- **Nested-Safe**: Correctly handles nested `{{c1::...{{c2::...}}...}}` structures.
+- **Case-Insensitive**: Supports both `{{c1::...}}` and `{{C1::...}}`.
+- **Paste Strip**: Automatically removes cloze markup when pasting into non-cloze fields.
+- **Native Undo**: Uses atomic operations so `Ctrl+Z` works perfectly.
+- **Configuration UI**: Built-in settings dialog for hotkeys and options.
+- **Support Tab**: Integrated support page with QR codes for donations.
 
 ## Usage
-- **Selection**: Select a block of text and use the hotkey to remove all clozes within that selection.
-- **Caret**: Place the caret anywhere inside the cloze to remove only that cloze; for nested clozes, the innermost one is removed first. 
-- **Paste**: When you paste cloze text into a field that does not use the `cloze:` filter, the pasted `{{cN::...}}` markup is automatically removed. Pasting into cloze fields keeps the markup intact.
-- Default hotkey: Ctrl+Alt+Shift+R. 
-- Works when the caret is placed on the opener token `{{cN::`, targeting that cloze instead of the parent. 
+- **Hotkey**: Default is `Ctrl+Alt+Shift+R`. Customize it in the Add-on Config.
+- **Caret**: Place the cursor inside a cloze and press the hotkey to unwrap it.
+- **Selection**: Select multiple clozes and press the hotkey to remove all of them at once.
+- **MathJax**: Works seamlessly with rendered MathJax in the editor.
+- **Paste**: Pasting `{{c1::text}}` into a normal field (without `cloze:`) automatically converts it to `text`.
 
 ## Configuration
-- The default hotkey can be customized in `config.json`.
-- Automatic paste stripping for non-cloze fields is controlled by `strip_pasted_clozes_in_non_cloze_fields` and is enabled by default.
-- See `config.md` for the configuration key documentation. 
-
-## Notes on behavior
-- Optional hints are recognized only at depth 1 of the currently targeted cloze, so `{{c1::text::hint}}` becomes `text`. 
-- Nested clozes are preserved when removing an outer cloze that encloses them if only the caret is used, but are removed if they are part of a larger selection.
-- The paste cleanup only runs when the target field is known to be a non-`cloze:` field.
-- The editor is notified of changes and native undo is supported via a single insertHTML operation. 
-
-## Appropriate Legal Notices (Attribution)
-Based on the Anki add‑on Cloze Overlapper by Glutanimate. [Click here to support Glutanimate’s work.](https://glutanimate.com/support-my-work/) 
-- “Cloze Overlapper” must link to https://github.com/glutanimate/cloze-overlapper/ per the Additional Terms. 
-- The support link must point to https://glutanimate.com/support-my-work/ per the Additional Terms. 
-
-## License
-This project is licensed under the GNU Affero General Public License v3, with Additional Terms under Section 7 as included in `LICENSE.txt`; when conveying this work, include the full license text and preserve all notices. 
-If you modify and convey this project, mark your changes with a prominent “modified by + date” notice in the modified source files and keep all legal notices and attributions intact. 
+Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
+- **General Tab**: Change the hotkey and toggle paste-stripping.
+- **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
 ## Changelog
+### 2026-03-17
+- **Improved MathJax Support**: Implemented source-aware mapping and depth-tracking parser to handle complex LaTeX formulas with nested braces (`\text{...{...}}`) and multiple clozes per formula.
+- **Case-Insensitivity**: Added support for both lowercase `{{c1::` and uppercase `{{C1::` clozes.
+- **New Configuration UI**: Added a graphical settings window with General and Support tabs.
+- **Project Refactor**: Moved all core files to `addon/` subfolder and improved build scripts.
+- **Integrated Support**: Added a Support tab in Config with QR codes and copy buttons for UPI/BTC/ETH.
+
 ### 2026-03-07
 - Added automatic cloze stripping for pasted content in fields that do not use the `cloze:` filter.
 - Made the paste cleanup configurable with `strip_pasted_clozes_in_non_cloze_fields`, enabled by default.
@@ -50,17 +42,15 @@ If you modify and convey this project, mark your changes with a prominent “mod
 ### 2026-02-24
 - Fixed paragraph/newline loss when removing a cloze at the start of a line.
 - Improved undo stability.
-- Ignored key-repeat so one hotkey press triggers one removal.
-- Added compatibility for cloze-removal hotkey while editing fields during review with [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438), with safe fallback when that add-on is not installed.
-- Reworked selection-based removal to use DOM-preserving cloze unwrapping instead of HTML-string regex replacement.
-- Restricted review-screen script injection to active [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438) environments.
-- Tightened editable-element detection to avoid operating on non-editor root containers.
+- Added compatibility for [Edit Field During Review (Cloze)](https://ankiweb.net/shared/info/385888438).
 
-### 2026-02-18
-- Added support for removing all clozes within a text selection.
+## Appropriate Legal Notices (Attribution)
+Based on the Anki add‑on Cloze Overlapper by Glutanimate. [Click here to support Glutanimate’s work.](https://glutanimate.com/support-my-work/) 
+- “Cloze Overlapper” must link to https://github.com/glutanimate/cloze-overlapper/ per the Additional Terms. 
+- The support link must point to https://glutanimate.com/support-my-work/ per the Additional Terms. 
 
-### 2025-11-02
-- Implemented cursor‑aware, nested‑safe cloze removal with native undo; opener‑caret targets the correct cloze. 
+## License
+This project is licensed under the GNU Affero General Public License v3, with Additional Terms under Section 7 as included in `LICENSE.txt`.
 
 ## Acknowledgments
-Original work and licensing by Glutanimate (see header in `web/editor.js`) and `LICENSE.txt` for AGPLv3 + Additional Terms. 
+Original work and licensing by Glutanimate (see header in `addon/web/editor.js`) and `LICENSE.txt`.

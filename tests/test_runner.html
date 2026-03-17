@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remove Clozes Test Runner</title>
+    <style>
+        body { font-family: system-ui, sans-serif; padding: 20px; }
+        #results { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px; }
+        .pass { color: green; font-weight: bold; }
+        .fail { color: red; font-weight: bold; }
+        .test-case { margin-bottom: 5px; }
+        #sandbox { border: 1px solid #ccc; padding: 10px; margin-top: 20px; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>Remove Clozes - JavaScript Tests</h1>
+    <div id="results"></div>
+    
+    <h3>Sandbox Editor (Hidden during tests)</h3>
+    <div id="sandbox" contenteditable="true"></div>
+
+    <!-- Load the add-on script -->
+    <script>
+        // Mock Anki environment variables before loading script
+        window.RemoveClozesConfig = { hotkey: "Ctrl+Alt+Shift+R", stripPastedClozesInNonClozeFields: true };
+    </script>
+    <script src="../addon/web/editor.js"></script>
+
+    <script>
+        const api = window._RemoveClozesTestAPI;
+        const resultsDiv = document.getElementById('results');
+        const sandbox = document.getElementById('sandbox');
+
+        let passed = 0;
+        let failed = 0;
+
+        function assert(condition, message) {
+            const div = document.createElement('div');
+            div.className = 'test-case';
+            if (condition) {
+                div.innerHTML = `<span class="pass">PASS</span> ${message}`;
+                passed++;
+            } else {
+                div.innerHTML = `<span class="fail">FAIL</span> ${message}`;
+                console.error("Test failed:", message);
+                failed++;
+            }
+            resultsDiv.appendChild(div);
+        }
+
+        function runTests() {
+            test_findAllClozeRanges();
+            test_mathjax_source_mapping();
+            test_cursor_inside_mathjax();
+            test_cursor_inside_text_sibling();
+            test_shadow_dom_caret();
+
+            const summary = document.createElement('h3');
+            summary.innerHTML = `Tests completed: <span class="${failed === 0 ? 'pass' : 'fail'}">${passed} passed, ${failed} failed</span>`;
+            resultsDiv.prepend(summary);
+        }
+
+        function test_findAllClozeRanges() {
+            const text = "Formula: \\(2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}\\) \\n sads{{c1::fdg}}";
+            const ranges = api.findAllClozeRanges(text);
+            
+            assert(ranges.length === 2, "findAllClozeRanges finds exactly 2 clozes");
+            assert(ranges[0].openStart === 39, "First cloze openStart is correct");
+            assert(text.slice(ranges[0].openStart, ranges[0].closeEnd) === "{{c2::\\sin 2\\theta}}", "First cloze string matches");
+            
+            assert(text.slice(ranges[1].openStart, ranges[1].closeEnd) === "{{c1::fdg}}", "Second cloze string matches");
+        }
+
+        function test_mathjax_source_mapping() {
+            sandbox.innerHTML = `<anki-mathjax data-formula="2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}"></anki-mathjax><br>sads{{c1::fdg}}`;
+            const sourceText = api.getEditableSourceText(sandbox);
+            
+            // Should match: \(2\sin\theta \cos\theta = {{c2::\sin 2\theta}}\)\nsads{{c1::fdg}}
+            assert(sourceText.includes("\\(2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}\\)"), "getEditableSourceText reconstructs MathJax formula");
+            assert(sourceText.includes("sads{{c1::fdg}}"), "getEditableSourceText includes text sibling");
+        }
+
+        function test_cursor_inside_mathjax() {
+            // Setup
+            sandbox.innerHTML = `<anki-mathjax data-formula="2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}"></anki-mathjax><br>sads{{c1::fdg}}`;
+            
+            const sourceText = api.getEditableSourceText(sandbox);
+            // We want to target the first cloze: {{c2::\sin 2\theta}}
+            const targetPos = sourceText.indexOf("\\sin 2\\theta"); // somewhere inside the formula cloze
+            
+            const bounds = api.findInnermostClozeAt(sourceText, targetPos);
+            assert(bounds !== null, "findInnermostClozeAt finds the MathJax cloze");
+            assert(sourceText.slice(bounds.openStart, bounds.closeEnd) === "{{c2::\\sin 2\\theta}}", "Bounds correctly identify MathJax cloze");
+
+            // Execute replacement
+            const success = api.replaceClozeByBounds(document, sandbox, bounds);
+            assert(success, "replaceClozeByBounds executes without error");
+            
+            const mathjax = sandbox.querySelector("anki-mathjax");
+            assert(mathjax.getAttribute("data-formula") === "2\\sin\\theta \\cos\\theta = \\sin 2\\theta", "MathJax data-formula correctly updated");
+            
+            // Check that the second cloze is untouched
+            assert(sandbox.innerHTML.includes("sads{{c1::fdg}}"), "Sibling cloze remains untouched");
+        }
+
+        function test_cursor_inside_text_sibling() {
+            // Setup
+            sandbox.innerHTML = `<anki-mathjax data-formula="2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}"></anki-mathjax><br>sads{{c1::fdg}}`;
+            
+            const sourceText = api.getEditableSourceText(sandbox);
+            // We want to target the second cloze: {{c1::fdg}}
+            const targetPos = sourceText.indexOf("fdg"); 
+            
+            const bounds = api.findInnermostClozeAt(sourceText, targetPos);
+            assert(bounds !== null, "findInnermostClozeAt finds the text cloze");
+            assert(sourceText.slice(bounds.openStart, bounds.closeEnd) === "{{c1::fdg}}", "Bounds correctly identify text cloze");
+
+            // Execute replacement
+            const success = api.replaceClozeByBounds(document, sandbox, bounds);
+            assert(success, "replaceClozeByBounds executes without error");
+            
+            // Check that the first cloze in MathJax is untouched
+            const mathjax = sandbox.querySelector("anki-mathjax");
+            assert(mathjax.getAttribute("data-formula") === "2\\sin\\theta \\cos\\theta = {{c2::\\sin 2\\theta}}", "MathJax data-formula remains untouched");
+            
+            // Wait for innerHTML updates (fallback insertHTML might not work exactly in this isolated DOM without document.execCommand working perfectly, 
+            // but we can check if it at least tried. Actually, document.execCommand("insertHTML") should work if sandbox is focused).
+        }
+
+        function test_shadow_dom_caret() {
+            // Setup a fake MathJax element with Shadow DOM
+            sandbox.innerHTML = `<anki-mathjax data-formula="1+1={{c1::2}}"></anki-mathjax>`;
+            const mj = sandbox.querySelector('anki-mathjax');
+            const shadow = mj.attachShadow({mode: 'open'});
+            shadow.innerHTML = `<span>Rendered Output</span>`;
+            const span = shadow.querySelector('span');
+
+            // Simulate selection inside the shadow DOM
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(span);
+            sel.removeAllRanges();
+            sel.addRange(range);
+
+            const sourcePos = api.getCursorIndexInSource(sandbox, sel);
+            // Source text: \(1+1={{c1::2}}\)
+            // Expect pos to be mapped to mjIdx + 2 = 2 (start of formula)
+            assert(sourcePos === 2, "getCursorIndexInSource maps Shadow DOM selection to host's formula start");
+
+            const bounds = api.findInnermostClozeAt(api.getEditableSourceText(sandbox), sourcePos);
+            assert(bounds !== null && bounds.openStart === 5, "findInnermostClozeAt finds the correct cloze from Shadow DOM pos");
+        }
+
+        // Run tests when loaded
+        window.onload = () => {
+            sandbox.focus();
+            runTests();
+        };
+    </script>
+</body>
+</html>
