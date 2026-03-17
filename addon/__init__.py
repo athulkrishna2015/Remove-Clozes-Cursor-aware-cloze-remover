@@ -77,6 +77,10 @@ def _configured_bool(key: str, default: bool) -> bool:
     return value if isinstance(value, bool) else default
 
 
+def _safe_backend_mode() -> bool:
+    return _configured_bool("safe_backend_mode", False)
+
+
 def _review_contexts() -> Tuple[type, ...]:
     contexts: List[type] = []
     if Reviewer is not None:
@@ -145,6 +149,7 @@ def inject_editor_script(web_content: "WebContent", context: Any):
         "processClozesInsideMathjax": _configured_bool(
             "process_clozes_inside_mathjax", True
         ),
+        "safeBackendMode": _safe_backend_mode(),
         "reviewClozeFieldNames": _review_cloze_field_names(context),
     }
     should_inject = isinstance(context, Editor)
@@ -164,7 +169,54 @@ def remove_clozes(editor: "Editor"):
     """Remove cloze markers and hints from selected text"""
     if not editor.web:
         return
-    editor.web.eval("removeClozes();")
+    if _safe_backend_mode():
+        remove_clozes_backend(editor)
+    else:
+        editor.web.eval("removeClozes();")
+
+
+def remove_clozes_backend(editor: "Editor"):
+    if not editor.web or not editor.note:
+        return
+
+    def after_saved() -> None:
+        if not editor.web:
+            return
+
+        editor.web.evalWithCallback(
+            "window.removeClozesBackend && window.removeClozesBackend();",
+            lambda result: _apply_backend_result(editor, result),
+        )
+
+    editor.saveNow(after_saved, keepFocus=True)
+
+
+def _apply_backend_result(editor: "Editor", result: Any) -> None:
+    if not editor.web or not editor.note:
+        return
+    if not isinstance(result, dict) or not result.get("changed"):
+        return
+
+    if result.get("kind") == "textarea":
+        text = result.get("text")
+        if isinstance(text, str):
+            editor.web.eval(
+                f"window.applyRemoveClozesTextarea({json.dumps(text)});"
+            )
+        return
+
+    field_index = result.get("fieldIndex")
+    html = result.get("html")
+    if not isinstance(field_index, int) or not isinstance(html, str):
+        return
+
+    if field_index < 0 or field_index >= len(editor.note.fields):
+        return
+
+    editor.note.fields[field_index] = html
+    if not editor.addMode:
+        editor._save_current_note()
+    editor.loadNoteKeepingFocus()
 
 
 def add_remove_clozes_button(buttons: List[str], editor: "Editor"):

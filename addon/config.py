@@ -52,6 +52,11 @@ class ConfigDialog(QDialog):
         self.mathjax_cb.setChecked(self.config.get("process_clozes_inside_mathjax", True))
         layout.addWidget(self.mathjax_cb)
 
+        # Safe backend mode
+        self.safe_backend_cb = QCheckBox("Safe backend mode (no DOM edits; slower, no native undo)")
+        self.safe_backend_cb.setChecked(self.config.get("safe_backend_mode", False))
+        layout.addWidget(self.safe_backend_cb)
+
         layout.addStretch()
         tab.setLayout(layout)
         return tab
@@ -116,6 +121,7 @@ class ConfigDialog(QDialog):
         self.config["hotkey"] = self.hotkey_input.text()
         self.config["strip_pasted_clozes_in_non_cloze_fields"] = self.strip_cb.isChecked()
         self.config["process_clozes_inside_mathjax"] = self.mathjax_cb.isChecked()
+        self.config["safe_backend_mode"] = self.safe_backend_cb.isChecked()
         mw.addonManager.writeConfig(ADDON_NAME, self.config)
         self.accept()
 

@@ -25,13 +25,14 @@ A powerful Anki editor enhancement that removes cloze formatting around the care
 
 ## Configuration
 Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
-- **General Tab**: Change the hotkey, toggle paste-stripping, and toggle MathJax processing.
+- **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and enable Safe Backend Mode (no DOM edits).
 - **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
 ## Known Issues
 - **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can duplicate rendered MathJax. This release strips rendered MathJax HTML from replacement content, but if you still encounter this:
   - Disable "MathJax Preview" from the card editor cog wheel.
   - Or disable "Process clozes inside MathJax elements" from the Add-on Config.
+  - Or enable **Safe Backend Mode** to avoid DOM edits (no native undo).
 
 ## Changelog
 ### 2026-03-17

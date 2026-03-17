@@ -269,6 +269,46 @@ Cursor-aware, nested-safe cloze remover with native undo
     });
   }
 
+  function getActiveFieldIndex(editable) {
+    const container = getClosestMatchingNode(editable, ".field-container");
+    if (!container) return null;
+    const rawIndex = container.getAttribute("data-index") || "";
+    const fieldIndex = Number.parseInt(rawIndex, 10);
+    return Number.isNaN(fieldIndex) ? null : fieldIndex;
+  }
+
+  function getSourceIndexForBoundary(container, node, offset) {
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
+    let current = node;
+    while (current && current !== container) {
+      const root = current.getRootNode ? current.getRootNode() : null;
+      if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE && root.host) {
+        const host = root.host;
+        if (host.tagName && host.tagName.toUpperCase() === "ANKI-MATHJAX") {
+          const lightRange = document.createRange();
+          lightRange.setStartBefore(container.firstChild || container);
+          lightRange.setEndBefore(host);
+          const frag = lightRange.cloneContents();
+          const offsetBefore = getEditableSourceText(frag).length;
+          return processClozesInsideMathjax ? offsetBefore + 2 : offsetBefore;
+        }
+        current = host;
+      } else {
+        break;
+      }
+    }
+
+    const range = document.createRange();
+    try {
+      range.setStartBefore(container.firstChild || container);
+      range.setEnd(node, offset);
+    } catch (e) {
+      return -1;
+    }
+    const frag = range.cloneContents();
+    return getEditableSourceText(frag).length;
+  }
+
   function getClosestMatchingNode(node, selector) {
     let current = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     while (current) {
@@ -575,6 +615,96 @@ Cursor-aware, nested-safe cloze remover with native undo
       container.normalize();
     }
     return true;
+  }
+
+  function replaceClozeByBoundsInContainer(container, bounds) {
+    const { openStart, textStart, textEnd, closeEnd } = bounds;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
+
+    const startInfo = mapSourceIndexToNodeOffset(container, openStart);
+    const mathjax = processClozesInsideMathjax ? getClosestMatchingNode(startInfo.node, "anki-mathjax") : null;
+    if (mathjax) {
+      const formula = mathjax.getAttribute("data-formula") || mathjax.getAttribute("data-mathjax") || "";
+      const source = getEditableSourceText(container);
+      const fullRepr = mathjax.classList.contains("mjx-block") 
+                       ? "\\[" + formula + "\\]" 
+                       : "\\(" + formula + "\\)";
+      const mjIdx = source.indexOf(fullRepr, Math.max(0, openStart - fullRepr.length - 10));
+      
+      if (mjIdx !== -1) {
+        const formulaContentStartInSource = mjIdx + 2;
+        const relOpen = openStart - formulaContentStartInSource;
+        const relText = textStart - formulaContentStartInSource;
+        const relEnd = textEnd - formulaContentStartInSource;
+        const relClose = closeEnd - formulaContentStartInSource;
+
+        if (relOpen >= 0 && relClose <= formula.length) {
+          const newFormula = formula.slice(0, relOpen) + 
+                             formula.slice(relText, relEnd) + 
+                             formula.slice(relClose);
+          
+          const newEl = mathjax.cloneNode(true);
+          newEl.setAttribute("data-formula", newFormula);
+          if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
+          // Clear internal HTML to prevent duplicate rendering artifacts in undo stack
+          newEl.innerHTML = "";
+          if (newEl.textContent === formula) newEl.textContent = newFormula;
+
+          mathjax.replaceWith(newEl);
+          stripRenderedMathjax(container);
+          return true;
+        }
+      }
+    }
+
+    if (!unwrapClozeInContainerByBounds(container, bounds)) {
+      return false;
+    }
+    stripRenderedMathjax(container);
+    return true;
+  }
+
+  function removeClozeRangesFromContainer(container, ranges) {
+    if (!ranges.length) return false;
+    const sorted = ranges.slice().sort((a, b) => b.openStart - a.openStart);
+    let replaced = false;
+
+    for (const next of sorted) {
+      if (!replaceClozeByBoundsInContainer(container, next)) {
+        continue;
+      }
+      replaced = true;
+    }
+
+    if (replaced) {
+      stripRenderedMathjax(container);
+    }
+
+    return replaced;
+  }
+
+  function removeClozesInContainerBySelection(container, start, end) {
+    if (start < 0 || end < 0) return false;
+    const text = getEditableSourceText(container);
+    const minPos = Math.min(start, end);
+    const maxPos = Math.max(start, end);
+
+    if (minPos === maxPos) {
+      const bounds = findInnermostClozeAt(text, minPos);
+      if (!bounds) return false;
+      return replaceClozeByBoundsInContainer(container, bounds);
+    }
+
+    const ranges = findAllClozeRanges(text).filter(
+      (r) => r.openStart >= minPos && r.closeEnd <= maxPos
+    );
+    if (!ranges.length) {
+      const fallback = findInnermostClozeAt(text, minPos);
+      if (!fallback) return false;
+      return replaceClozeByBoundsInContainer(container, fallback);
+    }
+
+    return removeClozeRangesFromContainer(container, ranges);
   }
 
   function removeAllClozesFromContainer(container) {
@@ -990,6 +1120,51 @@ Cursor-aware, nested-safe cloze remover with native undo
   // Public API expected by the add-on’s Python side and hotkey
   window.removeClozes = function () {
     removeClozesInSelection();
+  };
+
+  window.removeClozesBackend = function () {
+    const root = getActiveRoot();
+    const editable = getEditableDiv(root);
+    if (!editable) return { changed: false };
+
+    const selection = root.getSelection ? root.getSelection() : document.getSelection();
+    if (!selection || selection.rangeCount === 0) return { changed: false };
+
+    if (editable.tagName === "TEXTAREA") {
+      const start = editable.selectionStart;
+      const end = editable.selectionEnd;
+      if (start === null || end === null) return { changed: false };
+
+      const tmpDiv = document.createElement("div");
+      tmpDiv.textContent = editable.value;
+      const changed = removeClozesInContainerBySelection(tmpDiv, start, end);
+      if (!changed) return { changed: false };
+      return { changed: true, kind: "textarea", text: tmpDiv.textContent || "" };
+    }
+
+    const range = selection.getRangeAt(0);
+    const startIndex = getSourceIndexForBoundary(editable, range.startContainer, range.startOffset);
+    const endIndex = getSourceIndexForBoundary(editable, range.endContainer, range.endOffset);
+    if (startIndex < 0 || endIndex < 0) return { changed: false };
+
+    const tmpDiv = document.createElement("div");
+    tmpDiv.innerHTML = editable.innerHTML;
+    const changed = removeClozesInContainerBySelection(tmpDiv, startIndex, endIndex);
+    if (!changed) return { changed: false };
+
+    const fieldIndex = getActiveFieldIndex(editable);
+    if (fieldIndex === null) return { changed: false };
+    return { changed: true, fieldIndex, html: tmpDiv.innerHTML };
+  };
+
+  window.applyRemoveClozesTextarea = function (value) {
+    const root = getActiveRoot();
+    const editable = getEditableDiv(root);
+    if (!editable || editable.tagName !== "TEXTAREA") return false;
+    if (typeof value !== "string") return false;
+    editable.value = value;
+    notifyInput(editable);
+    return true;
   };
 
   // Export internal functions for unit testing
