@@ -59,7 +59,7 @@ _EFDRC_ENABLED_CACHE: Optional[bool] = None
 
 
 def _addon_config() -> dict[str, Any]:
-    config = mw.addonManager.getConfig(__name__) or {}
+    config = mw.addonManager.getConfig(MODULE_ADDON) or {}
     return config if isinstance(config, dict) else {}
 
 
@@ -152,9 +152,10 @@ def inject_editor_script(web_content: "WebContent", context: Any):
         should_inject = isinstance(context, _review_contexts())
 
     if should_inject:
+        config_json = json.dumps(config)
+        web_content.js += f"window.RemoveClozesConfig = {config_json};"
         web_content.head += (
-            f"""<script>window.RemoveClozesConfig = {json.dumps(config)};"""
-            """window.RemoveClozesHotkey = window.RemoveClozesConfig.hotkey;</script>"""
+            f"""<script id="remove-clozes-config" type="application/json">{config_json}</script>"""
             f"""<script src="/_addons/{MODULE_ADDON}/web/editor.js"></script>"""
         )
 

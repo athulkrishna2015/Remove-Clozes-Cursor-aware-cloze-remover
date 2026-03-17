@@ -29,13 +29,14 @@ Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
 - **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
 ## Known Issues
-- **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can cause MathJax elements to be duplicated at the top of the field.
-  - **Temporary Fix 1**: Disable "MathJax Preview" from the card editor cog wheel.
-  - **Temporary Fix 2**: Disable "Process clozes inside MathJax elements" from the Add-on Config.
+- **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can duplicate rendered MathJax. This release strips rendered MathJax HTML from replacement content, but if you still encounter this:
+  - Disable "MathJax Preview" from the card editor cog wheel.
+  - Or disable "Process clozes inside MathJax elements" from the Add-on Config.
 
 ## Changelog
 ### 2026-03-17
 - **Improved MathJax Support**: Implemented source-aware mapping and depth-tracking parser to handle complex LaTeX formulas with nested braces (`\text{...{...}}`) and multiple clozes per formula.
+- **Mitigated MathJax Undo Duplication**: Strips rendered MathJax HTML from replacement content to reduce duplicate renders on Undo.
 - **Case-Insensitivity**: Added support for both lowercase `{{c1::` and uppercase `{{C1::` clozes.
 - **New Configuration UI**: Added a graphical settings window with General and Support tabs.
 - **Project Refactor**: Moved all core files to `addon/` subfolder and improved build scripts.

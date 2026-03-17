@@ -3,12 +3,14 @@ from aqt import mw
 from aqt.qt import *
 from aqt.utils import showInfo
 
+ADDON_NAME = __name__.split(".")[0]
+
 class ConfigDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Remove Clozes Configuration")
         self.setMinimumSize(450, 550)
-        self.config = mw.addonManager.getConfig(__name__)
+        self.config = mw.addonManager.getConfig(ADDON_NAME) or {}
 
         self.setup_ui()
 
@@ -114,11 +116,11 @@ class ConfigDialog(QDialog):
         self.config["hotkey"] = self.hotkey_input.text()
         self.config["strip_pasted_clozes_in_non_cloze_fields"] = self.strip_cb.isChecked()
         self.config["process_clozes_inside_mathjax"] = self.mathjax_cb.isChecked()
-        mw.addonManager.writeConfig(__name__, self.config)
+        mw.addonManager.writeConfig(ADDON_NAME, self.config)
         self.accept()
 
 def on_config():
     ConfigDialog(mw).exec()
 
 def init_config():
-    mw.addonManager.setConfigAction(__name__, on_config)
+    mw.addonManager.setConfigAction(ADDON_NAME, on_config)

@@ -52,15 +52,66 @@ Cursor-aware, nested-safe cloze remover with native undo
   // ==========================================
   // 1. CONFIGURATION & STATE
   // ==========================================
-  const removeClozesConfig = window.RemoveClozesConfig || {};
-  const stripPastedClozesInNonClozeFields =
-    removeClozesConfig.stripPastedClozesInNonClozeFields !== false;
-  const processClozesInsideMathjax =
-    removeClozesConfig.processClozesInsideMathjax !== false;
-  
-  const reviewClozeFieldNames = Array.isArray(removeClozesConfig.reviewClozeFieldNames)
-    ? new Set(removeClozesConfig.reviewClozeFieldNames)
-    : null;
+  function readRemoveClozesConfig() {
+    if (window.RemoveClozesConfig && typeof window.RemoveClozesConfig === "object") {
+      return window.RemoveClozesConfig;
+    }
+
+    const configTag = document.getElementById("remove-clozes-config");
+    if (configTag && configTag.textContent) {
+      try {
+        const parsed = JSON.parse(configTag.textContent);
+        if (parsed && typeof parsed === "object") {
+          window.RemoveClozesConfig = parsed;
+          return parsed;
+        }
+      } catch (e) {}
+    }
+
+    return {};
+  }
+
+  function getRemoveClozesConfig() {
+    return readRemoveClozesConfig();
+  }
+
+  function getStripPastedClozesInNonClozeFields() {
+    const config = getRemoveClozesConfig();
+    return config.stripPastedClozesInNonClozeFields !== false;
+  }
+
+  function getProcessClozesInsideMathjax() {
+    const config = getRemoveClozesConfig();
+    return config.processClozesInsideMathjax !== false;
+  }
+
+  function getConfiguredHotkey() {
+    const config = getRemoveClozesConfig();
+    return typeof config.hotkey === "string" && config.hotkey.trim()
+      ? config.hotkey
+      : "Ctrl+Alt+Shift+R";
+  }
+
+  let cachedReviewClozeFieldNames = null;
+  let cachedReviewClozeFieldNamesKey = null;
+
+  function getReviewClozeFieldNames() {
+    const config = getRemoveClozesConfig();
+    const names = config.reviewClozeFieldNames;
+    if (!Array.isArray(names)) {
+      cachedReviewClozeFieldNames = null;
+      cachedReviewClozeFieldNamesKey = null;
+      return null;
+    }
+
+    const key = names.join("\u0000");
+    if (key !== cachedReviewClozeFieldNamesKey) {
+      cachedReviewClozeFieldNamesKey = key;
+      cachedReviewClozeFieldNames = new Set(names);
+    }
+    return cachedReviewClozeFieldNames;
+  }
+
   let editorClozeFields = null;
 
   // ==========================================
@@ -107,7 +158,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function installReviewShortcutIfNeeded() {
-    const parsed = parseShortcut(window.RemoveClozesHotkey);
+    const parsed = parseShortcut(getConfiguredHotkey());
     if (!parsed) return;
     if (window.__removeClozesReviewShortcutBound) return;
 
@@ -205,6 +256,19 @@ Cursor-aware, nested-safe cloze remover with native undo
     }
   }
 
+  function stripRenderedMathjax(container) {
+    if (!container || !container.querySelectorAll) return;
+    const mathjaxNodes = container.querySelectorAll("anki-mathjax");
+    if (!mathjaxNodes.length) return;
+
+    mathjaxNodes.forEach((node) => {
+      if (node.hasAttribute("data-formula") || node.hasAttribute("data-mathjax")) {
+        // Prevent serialized HTML from capturing rendered MathJax nodes.
+        node.innerHTML = "";
+      }
+    });
+  }
+
   function getClosestMatchingNode(node, selector) {
     let current = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     while (current) {
@@ -251,6 +315,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function reviewFieldUsesClozeFilter(editable) {
+    const reviewClozeFieldNames = getReviewClozeFieldNames();
     if (!reviewClozeFieldNames) return null;
 
     const field = getClosestMatchingNode(editable, "[data-EFDRCfield]");
@@ -261,7 +326,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function shouldStripPastedClozes(editable) {
-    if (!stripPastedClozesInNonClozeFields || !editable) return false;
+    if (!getStripPastedClozesInNonClozeFields() || !editable) return false;
 
     const reviewFieldIsCloze = reviewFieldUsesClozeFilter(editable);
     if (reviewFieldIsCloze !== null) {
@@ -295,6 +360,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   // 6. SOURCE TEXT & MAPPING (MATHJAX)
   // ==========================================
   function getEditableSourceText(container) {
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
     let text = "";
     const walker = document.createTreeWalker(
       container,
@@ -335,6 +401,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function mapSourceIndexToNodeOffset(container, idx) {
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
     const walker = document.createTreeWalker(
       container,
       NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
@@ -393,6 +460,7 @@ Cursor-aware, nested-safe cloze remover with native undo
 
   function getCursorIndexInSource(container, selection) {
     if (!selection || selection.rangeCount === 0) return -1;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
 
     let range = selection.getRangeAt(0);
     let node = range.startContainer;
@@ -511,6 +579,7 @@ Cursor-aware, nested-safe cloze remover with native undo
 
   function removeAllClozesFromContainer(container) {
     let replaced = false;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
 
     while (true) {
       const text = getEditableSourceText(container);
@@ -568,6 +637,10 @@ Cursor-aware, nested-safe cloze remover with native undo
         break;
       }
       replaced = true;
+    }
+
+    if (replaced) {
+      stripRenderedMathjax(container);
     }
 
     return replaced;
@@ -686,6 +759,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   // ==========================================
   function replaceClozeByBounds(root, editable, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
 
     const startInfo = mapSourceIndexToNodeOffset(editable, openStart);
     
@@ -775,6 +849,8 @@ Cursor-aware, nested-safe cloze remover with native undo
     const root = getActiveRoot();
     const editable = getEditableDiv(root);
     if (!editable) return;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
+    if (editable.tagName === "TEXTAREA" && !processClozesInsideMathjax) return;
 
     if (editable.focus) editable.focus();
 
@@ -822,6 +898,8 @@ Cursor-aware, nested-safe cloze remover with native undo
     const root = getActiveRoot();
     const editable = getEditableDiv(root);
     if (!editable) return;
+    const processClozesInsideMathjax = getProcessClozesInsideMathjax();
+    if (editable.tagName === "TEXTAREA" && !processClozesInsideMathjax) return;
 
     if (editable.focus) editable.focus();
 
