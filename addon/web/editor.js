@@ -55,6 +55,8 @@ Cursor-aware, nested-safe cloze remover with native undo
   const removeClozesConfig = window.RemoveClozesConfig || {};
   const stripPastedClozesInNonClozeFields =
     removeClozesConfig.stripPastedClozesInNonClozeFields !== false;
+  const processClozesInsideMathjax =
+    removeClozesConfig.processClozesInsideMathjax !== false;
   const reviewClozeFieldNames = Array.isArray(removeClozesConfig.reviewClozeFieldNames)
     ? new Set(removeClozesConfig.reviewClozeFieldNames)
     : null;
@@ -300,7 +302,7 @@ Cursor-aware, nested-safe cloze remover with native undo
         acceptNode(node) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const tag = node.tagName.toUpperCase();
-            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            if ((processClozesInsideMathjax && tag === "ANKI-MATHJAX") || tag === "BR") return NodeFilter.FILTER_ACCEPT;
             return NodeFilter.FILTER_SKIP;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -334,7 +336,7 @@ Cursor-aware, nested-safe cloze remover with native undo
         acceptNode(node) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const tag = node.tagName.toUpperCase();
-            if (tag === "ANKI-MATHJAX" || tag === "BR") return NodeFilter.FILTER_ACCEPT;
+            if ((processClozesInsideMathjax && tag === "ANKI-MATHJAX") || tag === "BR") return NodeFilter.FILTER_ACCEPT;
             return NodeFilter.FILTER_SKIP;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -389,7 +391,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     // Handle Shadow DOM (Rendered MathJax)
     // Standard Ranges cannot cross shadow boundaries. If we are inside, we climb to host.
     let current = node;
-    while (current && current !== container) {
+    while (processClozesInsideMathjax && current && current !== container) {
       const root = current.getRootNode ? current.getRootNode() : null;
       if (root && root.nodeType === Node.DOCUMENT_FRAGMENT_NODE && root.host) {
         const host = root.host;
@@ -514,7 +516,7 @@ Cursor-aware, nested-safe cloze remover with native undo
 
       // Check if this cloze is inside a MathJax element
       const startInfo = mapSourceIndexToNodeOffset(container, next.openStart);
-      const mathjax = getClosestMatchingNode(startInfo.node, "anki-mathjax");
+      const mathjax = processClozesInsideMathjax ? getClosestMatchingNode(startInfo.node, "anki-mathjax") : null;
 
       if (mathjax) {
         const formula = mathjax.getAttribute("data-formula") || mathjax.getAttribute("data-mathjax") || "";
@@ -676,7 +678,7 @@ Cursor-aware, nested-safe cloze remover with native undo
 
     const startInfo = mapSourceIndexToNodeOffset(editable, openStart);
     
-    const mathjax = getClosestMatchingNode(startInfo.node, "anki-mathjax");
+    const mathjax = processClozesInsideMathjax ? getClosestMatchingNode(startInfo.node, "anki-mathjax") : null;
     if (mathjax) {
       const formula = mathjax.getAttribute("data-formula") || mathjax.getAttribute("data-mathjax") || "";
       const source = getEditableSourceText(editable);

@@ -6,4 +6,8 @@
 
 (boolean): Automatically remove cloze markup from pasted content when the target field does not use the `cloze:` filter. Default: `true`
 
+### `process_clozes_inside_mathjax`
+
+(boolean): When enabled, the add-on attempts to process and remove clozes found inside MathJax formulas. Disabling this can prevent certain rendering artifacts (like duplication on Undo) in some Anki versions. Default: `true`
+
 ---

@@ -142,6 +142,9 @@ def inject_editor_script(web_content: "WebContent", context: Any):
         "stripPastedClozesInNonClozeFields": _configured_bool(
             "strip_pasted_clozes_in_non_cloze_fields", True
         ),
+        "processClozesInsideMathjax": _configured_bool(
+            "process_clozes_inside_mathjax", True
+        ),
         "reviewClozeFieldNames": _review_cloze_field_names(context),
     }
     should_inject = isinstance(context, Editor)

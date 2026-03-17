@@ -45,6 +45,11 @@ class ConfigDialog(QDialog):
         self.strip_cb.setChecked(self.config.get("strip_pasted_clozes_in_non_cloze_fields", True))
         layout.addWidget(self.strip_cb)
 
+        # Process MathJax clozes
+        self.mathjax_cb = QCheckBox("Process clozes inside MathJax elements")
+        self.mathjax_cb.setChecked(self.config.get("process_clozes_inside_mathjax", True))
+        layout.addWidget(self.mathjax_cb)
+
         layout.addStretch()
         tab.setLayout(layout)
         return tab
@@ -108,6 +113,7 @@ class ConfigDialog(QDialog):
     def save_config(self):
         self.config["hotkey"] = self.hotkey_input.text()
         self.config["strip_pasted_clozes_in_non_cloze_fields"] = self.strip_cb.isChecked()
+        self.config["process_clozes_inside_mathjax"] = self.mathjax_cb.isChecked()
         mw.addonManager.writeConfig(__name__, self.config)
         self.accept()
 
