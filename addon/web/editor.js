@@ -655,6 +655,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     window.__removeClozesPasteHandlerBound = true;
   }
 
+  // ==========================================
+  // 8. ACTION & REPLACEMENT LOGIC
+  // ==========================================
   function replaceClozeByBounds(root, editable, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
 
@@ -684,10 +687,13 @@ Cursor-aware, nested-safe cloze remover with native undo
           const newEl = mathjax.cloneNode(true);
           newEl.setAttribute("data-formula", newFormula);
           if (newEl.hasAttribute("data-mathjax")) newEl.setAttribute("data-mathjax", newFormula);
-          if (newEl.textContent === formula) newEl.textContent = newFormula;
+          // Do NOT set textContent; Anki will handle rendering from attributes.
+          // This prevents duplicate rendering artifacts.
 
           const range = document.createRange();
-          range.selectNode(mathjax);
+          range.setStartBefore(mathjax);
+          range.setEndAfter(mathjax);
+          
           const sel = getRootSelection(root);
           sel.removeAllRanges();
           sel.addRange(range);

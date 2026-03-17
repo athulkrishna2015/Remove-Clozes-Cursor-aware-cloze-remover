@@ -8,6 +8,7 @@ A powerful Anki editor enhancement that removes cloze formatting around the care
 - **Cursor-Aware**: Removes only the innermost cloze enclosing the caret.
 - **Selection-Based**: Removes all clozes found within a selected block of text.
 - **MathJax Support**: Works inside MathJax elements (e.g., `\({{c1::text}}\)`). Handles complex MathJax with nested braces (`\text{...{...}}`) by using depth-aware parsing.
+- **Rendered MathJax Awareness**: Correctly targets clozes even when "MathJax Preview" is enabled. It escapes the Shadow DOM and maps the selection to the underlying TeX source automatically.
 - **Nested-Safe**: Correctly handles nested `{{c1::...{{c2::...}}...}}` structures.
 - **Case-Insensitive**: Supports both `{{c1::...}}` and `{{C1::...}}`.
 - **Paste Strip**: Automatically removes cloze markup when pasting into non-cloze fields.
