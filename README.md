@@ -32,6 +32,12 @@ Access the configuration via **Tools -> Add-ons -> Remove Clozes -> Config**.
 - **General Tab**: Change the hotkey, toggle paste-stripping, toggle MathJax processing, and select Backend Mode (Auto/JavaScript/Python).
 - **Support Tab**: View QR codes for UPI, BTC, and ETH to support the developer.
 
+## Support
+
+If you find this add-on useful, please consider supporting its development:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
+
 ## Known Issues
 - **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can duplicate rendered MathJax. This release strips rendered MathJax HTML from replacement content, but if you still encounter this:
   - Disable "MathJax Preview" from the card editor cog wheel.
