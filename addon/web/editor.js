@@ -269,17 +269,65 @@ Cursor-aware, nested-safe cloze remover with native undo
     });
   }
 
-  function serializeFieldHTML(container) {
+  function getMathjaxFormulaText(node) {
+    if (!node) return "";
+    return node.getAttribute("data-formula") ||
+      node.getAttribute("data-mathjax") ||
+      node.textContent ||
+      "";
+  }
+
+  function serializeHTMLWithMathjax(container, serializeMathjax) {
+    if (!container) return "";
+
     const clone = container.cloneNode(true);
-    const mathjaxNodes = clone.querySelectorAll("anki-mathjax");
-    mathjaxNodes.forEach((node) => {
-      const formula = node.getAttribute("data-formula") || node.getAttribute("data-mathjax") || "";
-      const text = node.classList.contains("mjx-block")
-        ? "\\[" + formula + "\\]"
-        : "\\(" + formula + "\\)";
-      node.replaceWith(document.createTextNode(text));
+    const mathjaxNodes = clone.querySelectorAll
+      ? clone.querySelectorAll("anki-mathjax")
+      : [];
+    const replacements = [];
+
+    mathjaxNodes.forEach((node, index) => {
+      const marker = "__REMOVE_CLOZES_MATHJAX_" + index + "__";
+      replacements.push({
+        marker: "<!--" + marker + "-->",
+        value: serializeMathjax(node),
+      });
+      node.replaceWith(document.createComment(marker));
     });
-    return clone.innerHTML;
+
+    let html = clone.innerHTML;
+    replacements.forEach((replacement) => {
+      html = html.split(replacement.marker).join(replacement.value);
+    });
+    return html;
+  }
+
+  function serializeMathjaxSource(node) {
+    const formula = getMathjaxFormulaText(node);
+    return node.classList.contains("mjx-block")
+      ? "\\[" + formula + "\\]"
+      : "\\(" + formula + "\\)";
+  }
+
+  function serializeMathjaxElementHTML(node) {
+    const clone = node.cloneNode(false);
+    if (
+      node.childNodes &&
+      node.childNodes.length === 1 &&
+      node.firstChild &&
+      node.firstChild.nodeType === Node.TEXT_NODE
+    ) {
+      clone.textContent = node.textContent || "";
+    }
+    return clone.outerHTML;
+  }
+
+  function serializeReplacementHTML(container) {
+    return serializeHTMLWithMathjax(container, serializeMathjaxElementHTML);
+  }
+
+  function serializeFieldHTML(container) {
+    return serializeHTMLWithMathjax(container, serializeMathjaxSource);
   }
 
   function getActiveFieldIndex(editable) {
@@ -798,7 +846,7 @@ Cursor-aware, nested-safe cloze remover with native undo
       return null;
     }
 
-    return removeAllClozesFromContainer(tmpDiv) ? tmpDiv.innerHTML : null;
+    return removeAllClozesFromContainer(tmpDiv) ? serializeReplacementHTML(tmpDiv) : null;
   }
 
   function stripClozesFromText(text) {
@@ -963,7 +1011,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     const innerFrag = innerRange.cloneContents();
     const tmpDiv = document.createElement("div");
     tmpDiv.appendChild(innerFrag);
-    const innerHTML = tmpDiv.innerHTML;
+    const innerHTML = serializeReplacementHTML(tmpDiv);
 
     const outerRange = document.createRange();
     outerRange.setStart(outerStartPos.node, outerStartPos.offset);
@@ -1097,7 +1145,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     const replaced = removeAllClozesFromContainer(tmpDiv);
     if (!replaced) return;
 
-    const replacementHTML = tmpDiv.innerHTML;
+    const replacementHTML = serializeReplacementHTML(tmpDiv);
     const editSel = getRootSelection(root);
     if (!editSel) return;
     editSel.removeAllRanges();
@@ -1221,7 +1269,10 @@ Cursor-aware, nested-safe cloze remover with native undo
     findAllClozeRanges,
     findInnermostClozeAt,
     getEditableSourceText,
+    getCursorIndexInSource,
     mapSourceIndexToNodeOffset,
+    serializeFieldHTML,
+    serializeReplacementHTML,
     stripClozesFromHTML,
     stripClozesFromText,
     removeAllClozesFromContainer,

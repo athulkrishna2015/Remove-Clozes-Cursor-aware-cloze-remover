@@ -55,6 +55,8 @@
             test_cursor_inside_mathjax();
             test_cursor_inside_text_sibling();
             test_shadow_dom_caret();
+            test_serialize_field_html_preserves_mathjax_angle_brackets();
+            test_serialize_replacement_html_round_trips_mathjax_angle_brackets();
 
             const summary = document.createElement('h3');
             summary.innerHTML = `Tests completed: <span class="${failed === 0 ? 'pass' : 'fail'}">${passed} passed, ${failed} failed</span>`;
@@ -150,6 +152,29 @@
 
             const bounds = api.findInnermostClozeAt(api.getEditableSourceText(sandbox), sourcePos);
             assert(bounds !== null && bounds.openStart === 5, "findInnermostClozeAt finds the correct cloze from Shadow DOM pos");
+        }
+
+        function test_serialize_field_html_preserves_mathjax_angle_brackets() {
+            sandbox.innerHTML = `{{c1::outside}}<br><anki-mathjax data-formula="x < y > z"></anki-mathjax>`;
+            const changed = api.removeAllClozesFromContainer(sandbox);
+            assert(changed, "removeAllClozesFromContainer unwraps the non-MathJax cloze");
+
+            const serialized = api.serializeFieldHTML(sandbox);
+            assert(serialized.includes("\\(x < y > z\\)"), "serializeFieldHTML keeps raw MathJax angle brackets");
+            assert(!serialized.includes("&lt;") && !serialized.includes("&gt;"), "serializeFieldHTML avoids escaping MathJax angle brackets");
+        }
+
+        function test_serialize_replacement_html_round_trips_mathjax_angle_brackets() {
+            const tmpDiv = document.createElement("div");
+            tmpDiv.innerHTML = `plain<anki-mathjax data-formula="x < y > z"></anki-mathjax>`;
+
+            const serialized = api.serializeReplacementHTML(tmpDiv);
+            const roundTrip = document.createElement("div");
+            roundTrip.innerHTML = serialized;
+            const mathjax = roundTrip.querySelector("anki-mathjax");
+
+            assert(!!mathjax, "serializeReplacementHTML keeps MathJax elements in the fragment");
+            assert(mathjax && mathjax.getAttribute("data-formula") === "x < y > z", "serializeReplacementHTML round-trips MathJax angle brackets");
         }
 
         // Run tests when loaded

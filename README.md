@@ -39,7 +39,6 @@ If you find this add-on useful, please consider supporting its development:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
 
 ## Known Issues
-- **MathJax `<` / `>` Escaped on Cloze Removal**: When removing clozes from a field that contains MathJax, `<` and `>` characters inside MathJax formulas are replaced with `&lt;` and `&gt;` respectively — even if the MathJax is outside the selected text. This happens because the browser's `innerHTML` serialization HTML-escapes text nodes created from MathJax formulas.
 - **MathJax Duplication on Undo**: In some Anki versions, using "Undo" after removing many clozes (e.g., "Select All") can duplicate rendered MathJax. This release strips rendered MathJax HTML from replacement content, but if you still encounter this:
   - Disable "MathJax Preview" from the card editor cog wheel.
   - Or disable "Process clozes inside MathJax elements" from the Add-on Config.
@@ -47,7 +46,7 @@ If you find this add-on useful, please consider supporting its development:
 
 ## Changelog
 ### 2026-04-01
-- **Bug: MathJax `<` / `>` Escaped on Cloze Removal**: Identified issue where `<` and `>` inside MathJax formulas (e.g., `\langle`, `x < y`) are replaced with `&lt;` and `&gt;` when removing clozes, even when the MathJax is outside the selected text.
+- **Fixed MathJax `<` / `>` Escaping on Cloze Removal**: Removing clozes now preserves literal `<` and `>` inside MathJax formulas, even when the formula is outside the selected text.
 
 ### 2026-03-17
 - **Improved MathJax Support**: Implemented source-aware mapping and depth-tracking parser to handle complex LaTeX formulas with nested braces (`\text{...{...}}`) and multiple clozes per formula.
