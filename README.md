@@ -47,6 +47,7 @@ If you find this add-on useful, please consider supporting its development:
 ## Changelog
 ### 2026-04-01
 - **Fixed MathJax `<` / `>` Escaping on Cloze Removal**: Removing clozes now preserves literal `<` and `>` inside MathJax formulas, even when the formula is outside the selected text.
+- **Release 2.7.1**: Bundled the MathJax `<`/`>` fix into the official add-on package.
 
 ### 2026-03-17
 - **Improved MathJax Support**: Implemented source-aware mapping and depth-tracking parser to handle complex LaTeX formulas with nested braces (`\text{...{...}}`) and multiple clozes per formula.
