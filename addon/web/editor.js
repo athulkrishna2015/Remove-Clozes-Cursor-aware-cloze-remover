@@ -628,7 +628,10 @@ Cursor-aware, nested-safe cloze remover with native undo
                 textEnd: hintStart !== null ? hintStart : j,
                 closeEnd: j + 2,
               });
-              i = j + 1; // outer loop will increment
+              // Do not jump i to j+1, because it will skip entirely any clozes
+              // inside this cloze!
+              // Instead, we can safely jump over the start tag `{{c...::`
+              i += mm[0].length - 1;
               break;
             }
             const ch = text[j];
@@ -636,7 +639,6 @@ Cursor-aware, nested-safe cloze remover with native undo
             else if (ch === "}" && depth > 0) depth--;
             j++;
           }
-          if (j >= text.length) i = text.length;
         }
       }
       i++;

@@ -45,6 +45,10 @@ If you find this add-on useful, please consider supporting its development:
   - Or switch Backend Mode to **Python** or **Auto**.
 
 ## Changelog
+### 2026-04-10
+- **Fixed Nested Cloze Removal**: Placing the cursor inside a nested cloze now correctly removes the innermost cloze instead of the outermost cloze.
+- **Release 2.7.2**: Shipped fix for nested cloze removal logic.
+
 ### 2026-04-01
 - **Fixed MathJax `<` / `>` Escaping on Cloze Removal**: Removing clozes now preserves literal `<` and `>` inside MathJax formulas, even when the formula is outside the selected text.
 - **Release 2.7.1**: Bundled the MathJax `<`/`>` fix into the official add-on package.
