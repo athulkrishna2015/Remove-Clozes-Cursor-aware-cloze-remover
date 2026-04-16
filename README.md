@@ -45,6 +45,9 @@ If you find this add-on useful, please consider supporting its development:
   - Or switch Backend Mode to **Python** or **Auto**.
 
 ## Changelog
+### 2026-04-16
+- **Fixed Table Corruption**: Removing clozes from within a table cell (e.g., `<td>{{c1::text}}</td>`) no longer breaks the table HTML structure or displaces the resulting text strings.
+
 ### 2026-04-10
 - **Fixed Nested Cloze Removal**: Placing the cursor inside a nested cloze now correctly removes the innermost cloze instead of the outermost cloze.
 

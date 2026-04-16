@@ -501,7 +501,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     return text;
   }
 
-  function mapSourceIndexToNodeOffset(container, idx) {
+  function mapSourceIndexToNodeOffset(container, idx, favorEnd = false) {
     const processClozesInsideMathjax = getProcessClozesInsideMathjax();
     const walker = document.createTreeWalker(
       container,
@@ -542,7 +542,7 @@ Cursor-aware, nested-safe cloze remover with native undo
         len = 1;
       }
 
-      if (remaining < len) {
+      if (favorEnd ? (remaining <= len && (len > 0 || remaining === 0)) : remaining < len) {
         if (node.nodeType === Node.TEXT_NODE) {
           return { node, offset: remaining };
         }
@@ -658,10 +658,10 @@ Cursor-aware, nested-safe cloze remover with native undo
   // ==========================================
   function unwrapClozeInContainerByBounds(container, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
-    const innerStartPos = mapSourceIndexToNodeOffset(container, textStart);
-    const innerEndPos = mapSourceIndexToNodeOffset(container, textEnd);
-    const outerStartPos = mapSourceIndexToNodeOffset(container, openStart);
-    const outerEndPos = mapSourceIndexToNodeOffset(container, closeEnd);
+    const innerStartPos = mapSourceIndexToNodeOffset(container, textStart, false);
+    const innerEndPos = mapSourceIndexToNodeOffset(container, textEnd, true);
+    const outerStartPos = mapSourceIndexToNodeOffset(container, openStart, false);
+    const outerEndPos = mapSourceIndexToNodeOffset(container, closeEnd, true);
 
     const innerRange = document.createRange();
     innerRange.setStart(innerStartPos.node, innerStartPos.offset);
@@ -954,7 +954,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     const { openStart, textStart, textEnd, closeEnd } = bounds;
     const processClozesInsideMathjax = getProcessClozesInsideMathjax();
 
-    const startInfo = mapSourceIndexToNodeOffset(editable, openStart);
+    const startInfo = mapSourceIndexToNodeOffset(editable, openStart, false);
     
     const mathjax = processClozesInsideMathjax ? getClosestMatchingNode(startInfo.node, "anki-mathjax") : null;
     if (mathjax) {
@@ -1002,10 +1002,10 @@ Cursor-aware, nested-safe cloze remover with native undo
       }
     }
 
-    const innerStartPos = mapSourceIndexToNodeOffset(editable, textStart);
-    const innerEndPos = mapSourceIndexToNodeOffset(editable, textEnd);
-    const outerStartPos = mapSourceIndexToNodeOffset(editable, openStart);
-    const outerEndPos = mapSourceIndexToNodeOffset(editable, closeEnd);
+    const innerStartPos = mapSourceIndexToNodeOffset(editable, textStart, false);
+    const innerEndPos = mapSourceIndexToNodeOffset(editable, textEnd, true);
+    const outerStartPos = mapSourceIndexToNodeOffset(editable, openStart, false);
+    const outerEndPos = mapSourceIndexToNodeOffset(editable, closeEnd, true);
 
     const innerRange = document.createRange();
     innerRange.setStart(innerStartPos.node, innerStartPos.offset);
