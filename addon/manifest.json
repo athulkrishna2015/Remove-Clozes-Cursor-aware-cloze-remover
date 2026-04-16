@@ -2,13 +2,13 @@
   "name": "Remove Clozes",
   "package": "remove_clozes",
   "ankiweb_id": "836994508",
-  "author": "Glutanimate",
-  "version": "2.7.4",
+  "author": "athulkrishna2015",
+  "version": "2.8.0",
   "homepage": "https://github.com/athulkrishna2015/Remove-Clozes-Cursor-aware-cloze-remover",
   "conflicts": [
     "836994508"
   ],
   "mod": 1653128682,
   "min_point_version": 28,
-  "human_version": "2.7.4"
+  "human_version": "2.8.0"
 }
