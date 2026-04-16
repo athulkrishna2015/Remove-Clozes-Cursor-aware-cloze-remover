@@ -3,12 +3,12 @@
   "package": "remove_clozes",
   "ankiweb_id": "836994508",
   "author": "Glutanimate",
-  "version": "2.7.3",
-  "homepage": "https://github.com/glutanimate/remove-clozes",
+  "version": "2.7.4",
+  "homepage": "https://github.com/athulkrishna2015/Remove-Clozes-Cursor-aware-cloze-remover",
   "conflicts": [
     "836994508"
   ],
   "mod": 1653128682,
   "min_point_version": 28,
-  "human_version": "2.7.3"
+  "human_version": "2.7.4"
 }
