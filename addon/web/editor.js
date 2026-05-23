@@ -657,6 +657,8 @@ Cursor-aware, nested-safe cloze remover with native undo
   // ==========================================
   // 8. ACTION & REPLACEMENT LOGIC
   // ==========================================
+  const deletedHintsHistory = {};
+
   function removeAiHint(container, clozeNum) {
     if (!container || !clozeNum) return;
     const aiHintsDiv = container.querySelector("div.ai-hints-json");
@@ -668,6 +670,13 @@ Cursor-aware, nested-safe cloze remover with native undo
       const data = JSON.parse(text);
       const key = "c" + clozeNum;
       if (data.hasOwnProperty(key)) {
+        // Back up before deleting
+        deletedHintsHistory[key] = data[key];
+        const addonId = aiHintsDiv.getAttribute("data-ai-hints-addon-id");
+        if (addonId) {
+          deletedHintsHistory._addonId = addonId;
+        }
+
         delete data[key];
         if (Object.keys(data).length === 0) {
           aiHintsDiv.remove();
@@ -677,6 +686,50 @@ Cursor-aware, nested-safe cloze remover with native undo
       }
     } catch (e) {
       console.error("Error updating AI hints:", e);
+    }
+  }
+
+  function syncAiHintsFromHistory(container) {
+    if (!container) return;
+    const text = getEditableSourceText(container);
+    const ranges = findAllClozeRanges(text);
+    if (!ranges.length) return;
+
+    let aiHintsDiv = container.querySelector("div.ai-hints-json");
+    let data = {};
+    let hasHintsDiv = !!aiHintsDiv;
+
+    if (hasHintsDiv) {
+      try {
+        const jsonText = aiHintsDiv.textContent.trim();
+        if (jsonText) {
+          data = JSON.parse(jsonText);
+        }
+      } catch (e) {
+        console.error("Error parsing AI hints in sync:", e);
+      }
+    }
+
+    let updated = false;
+    for (const range of ranges) {
+      if (!range.clozeNum) continue;
+      const key = "c" + range.clozeNum;
+      if (!data.hasOwnProperty(key) && deletedHintsHistory.hasOwnProperty(key)) {
+        data[key] = deletedHintsHistory[key];
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      if (!aiHintsDiv) {
+        aiHintsDiv = document.createElement("div");
+        aiHintsDiv.className = "ai-hints-json";
+        aiHintsDiv.setAttribute("contenteditable", "false");
+        aiHintsDiv.style.display = "none";
+        aiHintsDiv.setAttribute("data-ai-hints-addon-id", deletedHintsHistory._addonId || "2119980872");
+        container.appendChild(aiHintsDiv);
+      }
+      aiHintsDiv.textContent = JSON.stringify(data, null, 2);
     }
   }
 
@@ -1324,8 +1377,31 @@ Cursor-aware, nested-safe cloze remover with native undo
     replaceClozeByBounds,
     replaceClozeByBoundsInContainer,
     removeAiHint,
+    syncAiHintsFromHistory,
   };
+
+  function installUndoSyncHandler() {
+    document.addEventListener("input", function (event) {
+      const editable = getEditableFromEvent(event);
+      if (editable && editable.tagName !== "TEXTAREA") {
+        syncAiHintsFromHistory(editable);
+      }
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        setTimeout(() => {
+          const root = getActiveRoot();
+          const editable = getEditableDiv(root);
+          if (editable && editable.tagName !== "TEXTAREA") {
+            syncAiHintsFromHistory(editable);
+          }
+        }, 0);
+      }
+    });
+  }
 
   installPasteHandlerIfNeeded();
   installReviewShortcutIfNeeded();
+  installUndoSyncHandler();
 })();

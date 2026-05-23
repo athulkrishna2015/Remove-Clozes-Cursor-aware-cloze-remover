@@ -222,6 +222,38 @@
 
             const aiHintsDiv = sandbox.querySelector("div.ai-hints-json");
             assert(!aiHintsDiv, "AI hints div is entirely removed when no clozes remain");
+
+            // Test restoration/undo syncing from history
+            sandbox.innerHTML = initialHTML;
+            const text4 = api.getEditableSourceText(sandbox);
+            const ranges4 = api.findAllClozeRanges(text4);
+            const c1Bounds4 = ranges4.find(r => r.clozeNum === 1);
+            api.replaceClozeByBoundsInContainer(sandbox, c1Bounds4);
+
+            // Verify c1 is gone
+            let aiHintsDiv4 = sandbox.querySelector("div.ai-hints-json");
+            let data4 = JSON.parse(aiHintsDiv4.textContent.trim());
+            assert(!data4.hasOwnProperty("c1"), "c1 is gone before undo");
+
+            // Revert field HTML to contain {{c1::141}} but missing c1 hints (simulating native browser undo)
+            sandbox.innerHTML = `<strong>Article&nbsp;</strong>{{c1::141}}<strong>:</strong> Makes {{c2::Supreme Court decisions binding on all courts}} in India` + 
+                `<div class="ai-hints-json" data-ai-hints-addon-id="2119980872" contenteditable="false" style="display:none">` + 
+                `{` + 
+                `  "c2": { "hints": ["Hint 2"], "options": ["Supreme Court"], "correct_answer": "Supreme Court" }` + 
+                `}` + 
+                `</div>`;
+
+            // Call syncAiHintsFromHistory
+            api.syncAiHintsFromHistory(sandbox);
+
+            // Verify c1 is restored!
+            aiHintsDiv4 = sandbox.querySelector("div.ai-hints-json");
+            assert(!!aiHintsDiv4, "AI hints div exists after undo sync");
+            if (aiHintsDiv4) {
+                const restoredData = JSON.parse(aiHintsDiv4.textContent.trim());
+                assert(restoredData.hasOwnProperty("c1"), "AI hints c1 key is successfully restored on undo!");
+                assert(restoredData.c1.correct_answer === "141", "AI hints c1 content is preserved intact!");
+            }
         }
 
         // Run tests when loaded
