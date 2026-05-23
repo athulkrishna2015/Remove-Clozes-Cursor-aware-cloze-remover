@@ -1,8 +1,12 @@
-from os.path import dirname, join
+from pathlib import Path
 from aqt import mw
 from aqt.qt import *
-from aqt.utils import showInfo, qconnect, openLink
-from aqt.webview import AnkiWebView
+from aqt.utils import showInfo
+from aqt.gui_hooks import profile_did_open
+
+from .config_general import create_general_tab
+from .tab_support import create_support_tab
+from . import logger
 
 ADDON_NAME = __name__.split(".")[0]
 
@@ -12,15 +16,17 @@ class ConfigDialog(QDialog):
         self.setWindowTitle("Remove Clozes Configuration")
         self.setMinimumSize(450, 550)
         self.config = mw.addonManager.getConfig(ADDON_NAME) or {}
-
+        
+        logger.log("Configuration dialog opened.")
         self.setup_ui()
 
     def setup_ui(self):
         layout = QVBoxLayout()
         self.tabs = QTabWidget()
 
-        self.tabs.addTab(self.create_general_tab(), "General")
-        self.tabs.addTab(self.create_support_tab(), "Support")
+        self.tabs.addTab(create_general_tab(self), "General")
+        self.tabs.addTab(create_support_tab(self), "Support")
+        self.tabs.addTab(self.create_logs_tab(), "Logs")
 
         layout.addWidget(self.tabs)
 
@@ -32,132 +38,48 @@ class ConfigDialog(QDialog):
 
         self.setLayout(layout)
 
-    def create_general_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout()
-        backend_mode = self._normalized_backend_mode()
-
-        # Hotkey
-        hotkey_layout = QHBoxLayout()
-        hotkey_layout.addWidget(QLabel("Hotkey:"))
-        self.hotkey_input = QLineEdit(self.config.get("hotkey", "Ctrl+Alt+Shift+R"))
-        hotkey_layout.addWidget(self.hotkey_input)
-        layout.addLayout(hotkey_layout)
-
-        # Strip pasted clozes
-        self.strip_cb = QCheckBox("Strip pasted clozes in non-cloze fields")
-        self.strip_cb.setChecked(self.config.get("strip_pasted_clozes_in_non_cloze_fields", True))
-        layout.addWidget(self.strip_cb)
-
-        # Process MathJax clozes
-        self.mathjax_cb = QCheckBox("Process clozes inside MathJax elements")
-        self.mathjax_cb.setChecked(self.config.get("process_clozes_inside_mathjax", True))
-        layout.addWidget(self.mathjax_cb)
-
-        # Backend mode
-        backend_layout = QHBoxLayout()
-        backend_layout.addWidget(QLabel("Backend mode:"))
-        self.backend_mode_combo = QComboBox()
-        self.backend_mode_combo.addItem("Auto (MathJax selections only)", "auto")
-        self.backend_mode_combo.addItem("JavaScript (native undo)", "javascript")
-        self.backend_mode_combo.addItem("Python (safe backend)", "python")
-        self.backend_mode_combo.setCurrentIndex(
-            max(0, self.backend_mode_combo.findData(backend_mode))
-        )
-        backend_layout.addWidget(self.backend_mode_combo)
-        layout.addLayout(backend_layout)
-
-        layout.addStretch()
-        tab.setLayout(layout)
-        return tab
-
-    def create_support_tab(self):
+    def create_logs_tab(self) -> QWidget:
         tab = QWidget()
         layout = QVBoxLayout()
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
+        self.log_viewer = QPlainTextEdit()
+        self.log_viewer.setReadOnly(True)
+        self.log_viewer.setPlainText("\n".join(logger.get_logs()))
+        self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
 
-        # Ko-fi Widget (Embedded Script)
-        self.support_webview = AnkiWebView(tab)
-        self.support_webview.setFixedHeight(40)  # Enough for the widget button if not floating, but here it's floating
-        # For a floating widget, we need the script in a page. 
-        # The widget itself is fixed/absolute positioned by the script.
-        kofi_html = f"""
-        <html>
-        <head>
-        <style>
-          body {{ background-color: transparent; margin: 0; padding: 0; overflow: hidden; }}
-        </style>
-        <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
-        <script type='text/javascript'>
-          kofiwidget2.init('Support me on Ko-fi', '#72a4f2', 'D1D01W6NQT');
-          kofiwidget2.draw();
-        </script>
-        </head>
-        <body></body>
-        </html>
-        """
-        self.support_webview.setHtml(kofi_html)
-        layout.addWidget(self.support_webview)
-
-        # Support data
-        support_items = [
-            ("UPI", "athulkrishnasv2015-2@okhdfcbank", "UPI.jpg"),
-            ("Bitcoin (BTC)", "bc1qrrek3m7sr33qujjrktj949wav6mehdsk057cfx", "BTC.jpg"),
-            ("Ethereum (ETH)", "0xce6899e4903EcB08bE5Be65E44549fadC3F45D27", "ETH.jpg"),
-        ]
-
-        for title, address, img_file in support_items:
-            group = QGroupBox(title)
-            group_layout = QVBoxLayout()
-
-            # QR Code
-            qr_label = QLabel()
-            img_path = join(dirname(__file__), "Support", img_file)
-            pixmap = QPixmap(img_path)
-            if not pixmap.isNull():
-                qr_label.setPixmap(pixmap.scaled(250, 250, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-                qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            else:
-                qr_label.setText("QR Code not found")
-            group_layout.addWidget(qr_label)
-
-            # Address + Copy
-            addr_layout = QHBoxLayout()
-            addr_edit = QLineEdit(address)
-            addr_edit.setReadOnly(True)
-            addr_layout.addWidget(addr_edit)
-
-            copy_btn = QPushButton("Copy")
-            copy_btn.clicked.connect(lambda checked, a=address: self.copy_to_clipboard(a))
-            addr_layout.addWidget(copy_btn)
-
-            group_layout.addLayout(addr_layout)
-            group.setLayout(group_layout)
-            content_layout.addWidget(group)
-
-        content.setLayout(content_layout)
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-
+        layout.addWidget(self.log_viewer)
         tab.setLayout(layout)
+
+        logger.add_listener(self.on_log_added)
         return tab
+
+    def on_log_added(self, formatted_message: str):
+        self.log_viewer.appendPlainText(formatted_message)
+        self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
+
+    def accept(self):
+        logger.remove_listener(self.on_log_added)
+        super().accept()
+
+    def reject(self):
+        logger.remove_listener(self.on_log_added)
+        super().reject()
 
     def copy_to_clipboard(self, text):
         mw.app.clipboard().setText(text)
         showInfo(f"Copied: {text}", parent=self)
+        logger.log(f"Copied address to clipboard: {text}")
 
     def save_config(self):
         self.config["hotkey"] = self.hotkey_input.text()
         self.config["strip_pasted_clozes_in_non_cloze_fields"] = self.strip_cb.isChecked()
         self.config["process_clozes_inside_mathjax"] = self.mathjax_cb.isChecked()
         self.config["backend_mode"] = self.backend_mode_combo.currentData()
+        self.config["donated"] = self.donated_cb.isChecked()
         self.config.pop("safe_backend_mode", None)
         self.config.pop("safe_backend_auto_mode", None)
         mw.addonManager.writeConfig(ADDON_NAME, self.config)
+        logger.log("Configuration saved successfully.")
         self.accept()
 
     def _normalized_backend_mode(self) -> str:
@@ -173,8 +95,37 @@ class ConfigDialog(QDialog):
             return "python"
         return "javascript"
 
+def get_current_version() -> str:
+    try:
+        version_path = Path(__file__).parent / "VERSION"
+        return version_path.read_text(encoding="utf-8").strip()
+    except Exception:
+        return "2.8.0"
+
+def auto_open_support_on_update():
+    config = mw.addonManager.getConfig(ADDON_NAME) or {}
+    current_version = get_current_version()
+    last_version = config.get("last_version", "")
+    donated = config.get("donated", False)
+
+    if last_version != current_version:
+        config["last_version"] = current_version
+        mw.addonManager.writeConfig(ADDON_NAME, config)
+        
+        if not donated:
+            logger.log(f"First startup on v{current_version}. Opening Support tab.")
+            dialog = ConfigDialog(mw)
+            dialog.tabs.setCurrentIndex(1)  # Index 1 is Support tab
+            dialog.exec()
+        else:
+            logger.log(f"First startup on v{current_version}. Support tab skipped since 'I have donated' is checked.")
+
+def on_profile_did_open():
+    QTimer.singleShot(2000, auto_open_support_on_update)
+
 def on_config():
     ConfigDialog(mw).exec()
 
 def init_config():
     mw.addonManager.setConfigAction(ADDON_NAME, on_config)
+    profile_did_open.append(on_profile_did_open)

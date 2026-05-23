@@ -609,7 +609,7 @@ Cursor-aware, nested-safe cloze remover with native undo
     let i = 0;
     while (i < text.length) {
       if (text.toLowerCase().startsWith("{{c", i)) {
-        const mm = text.slice(i).match(/^\{\{c\d+::/i);
+        const mm = text.slice(i).match(/^\{\{c(\d+)::/i);
         if (mm) {
           const start = i;
           let j = i + mm[0].length;
@@ -627,6 +627,7 @@ Cursor-aware, nested-safe cloze remover with native undo
                 textStart: start + mm[0].length,
                 textEnd: hintStart !== null ? hintStart : j,
                 closeEnd: j + 2,
+                clozeNum: parseInt(mm[1], 10),
               });
               // Do not jump i to j+1, because it will skip entirely any clozes
               // inside this cloze!
@@ -656,6 +657,29 @@ Cursor-aware, nested-safe cloze remover with native undo
   // ==========================================
   // 8. ACTION & REPLACEMENT LOGIC
   // ==========================================
+  function removeAiHint(container, clozeNum) {
+    if (!container || !clozeNum) return;
+    const aiHintsDiv = container.querySelector("div.ai-hints-json");
+    if (!aiHintsDiv) return;
+
+    try {
+      const text = aiHintsDiv.textContent.trim();
+      if (!text) return;
+      const data = JSON.parse(text);
+      const key = "c" + clozeNum;
+      if (data.hasOwnProperty(key)) {
+        delete data[key];
+        if (Object.keys(data).length === 0) {
+          aiHintsDiv.remove();
+        } else {
+          aiHintsDiv.textContent = JSON.stringify(data, null, 2);
+        }
+      }
+    } catch (e) {
+      console.error("Error updating AI hints:", e);
+    }
+  }
+
   function unwrapClozeInContainerByBounds(container, bounds) {
     const { openStart, textStart, textEnd, closeEnd } = bounds;
     const innerStartPos = mapSourceIndexToNodeOffset(container, textStart, false);
@@ -715,6 +739,9 @@ Cursor-aware, nested-safe cloze remover with native undo
 
           mathjax.replaceWith(newEl);
           stripRenderedMathjax(container);
+          if (bounds.clozeNum) {
+            removeAiHint(container, bounds.clozeNum);
+          }
           return true;
         }
       }
@@ -724,6 +751,9 @@ Cursor-aware, nested-safe cloze remover with native undo
       return false;
     }
     stripRenderedMathjax(container);
+    if (bounds.clozeNum) {
+      removeAiHint(container, bounds.clozeNum);
+    }
     return true;
   }
 
@@ -771,7 +801,7 @@ Cursor-aware, nested-safe cloze remover with native undo
   }
 
   function removeAllClozesFromContainer(container) {
-    let replaced = false;
+    const removedClozeNums = [];
     const processClozesInsideMathjax = getProcessClozesInsideMathjax();
 
     while (true) {
@@ -819,7 +849,10 @@ Cursor-aware, nested-safe cloze remover with native undo
             if (newEl.textContent === formula) newEl.textContent = newFormula;
             
             mathjax.replaceWith(newEl);
-            replaced = true;
+            if (next.clozeNum) {
+              removedClozeNums.push(next.clozeNum);
+              removeAiHint(container, next.clozeNum);
+            }
             continue;
           }
         }
@@ -829,14 +862,17 @@ Cursor-aware, nested-safe cloze remover with native undo
       if (!unwrapClozeInContainerByBounds(container, next)) {
         break;
       }
-      replaced = true;
+      if (next.clozeNum) {
+        removedClozeNums.push(next.clozeNum);
+        removeAiHint(container, next.clozeNum);
+      }
     }
 
-    if (replaced) {
+    if (removedClozeNums.length > 0) {
       stripRenderedMathjax(container);
     }
 
-    return replaced;
+    return removedClozeNums;
   }
 
   function stripClozesFromHTML(html) {
@@ -848,7 +884,7 @@ Cursor-aware, nested-safe cloze remover with native undo
       return null;
     }
 
-    return removeAllClozesFromContainer(tmpDiv) ? serializeReplacementHTML(tmpDiv) : null;
+    return removeAllClozesFromContainer(tmpDiv).length > 0 ? serializeReplacementHTML(tmpDiv) : null;
   }
 
   function stripClozesFromText(text) {
@@ -860,7 +896,7 @@ Cursor-aware, nested-safe cloze remover with native undo
       return null;
     }
 
-    return removeAllClozesFromContainer(tmpDiv) ? (tmpDiv.textContent || "") : null;
+    return removeAllClozesFromContainer(tmpDiv).length > 0 ? (tmpDiv.textContent || "") : null;
   }
 
   function insertPasteReplacement(root, range, replacement) {
@@ -1081,6 +1117,9 @@ Cursor-aware, nested-safe cloze remover with native undo
     } else {
       const replaced = replaceClozeByBounds(root, editable, bounds);
       if (!replaced) return;
+      if (bounds.clozeNum) {
+        removeAiHint(editable, bounds.clozeNum);
+      }
     }
 
     // Notify Anki
@@ -1111,8 +1150,8 @@ Cursor-aware, nested-safe cloze remover with native undo
       const tmpDiv = document.createElement("div");
       tmpDiv.textContent = selectionText;
       
-      const replaced = removeAllClozesFromContainer(tmpDiv);
-      if (!replaced) return;
+      const removedClozeNums = removeAllClozesFromContainer(tmpDiv);
+      if (!removedClozeNums || !removedClozeNums.length) return;
       
       const before = editable.value.slice(0, start);
       const after = editable.value.slice(end);
@@ -1144,8 +1183,12 @@ Cursor-aware, nested-safe cloze remover with native undo
       return;
     }
 
-    const replaced = removeAllClozesFromContainer(tmpDiv);
-    if (!replaced) return;
+    const removedClozeNums = removeAllClozesFromContainer(tmpDiv);
+    if (!removedClozeNums || !removedClozeNums.length) return;
+
+    for (const clozeNum of removedClozeNums) {
+      removeAiHint(editable, clozeNum);
+    }
 
     const replacementHTML = serializeReplacementHTML(tmpDiv);
     const editSel = getRootSelection(root);
@@ -1279,6 +1322,8 @@ Cursor-aware, nested-safe cloze remover with native undo
     stripClozesFromText,
     removeAllClozesFromContainer,
     replaceClozeByBounds,
+    replaceClozeByBoundsInContainer,
+    removeAiHint,
   };
 
   installPasteHandlerIfNeeded();

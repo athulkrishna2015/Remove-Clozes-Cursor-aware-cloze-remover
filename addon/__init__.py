@@ -42,6 +42,11 @@ from .backend import (
     apply_backend_result as _apply_backend_result_backend,
     remove_clozes_backend as _remove_clozes_backend_impl,
 )
+from . import logger
+
+logger.clear_logs()
+logger.log("Remove Clozes add-on successfully initialized.")
+
 init_config()
 
 try:
@@ -186,6 +191,7 @@ def remove_clozes(editor: "Editor"):
     if not editor.web:
         return
     mode = _backend_mode()
+    logger.log(f"Triggered 'Remove Clozes' action (mode: {mode}).")
     if mode == "javascript":
         editor.web.eval("removeClozes();")
         return

@@ -57,6 +57,7 @@
             test_shadow_dom_caret();
             test_serialize_field_html_preserves_mathjax_angle_brackets();
             test_serialize_replacement_html_round_trips_mathjax_angle_brackets();
+            test_remove_ai_hints();
 
             const summary = document.createElement('h3');
             summary.innerHTML = `Tests completed: <span class="${failed === 0 ? 'pass' : 'fail'}">${passed} passed, ${failed} failed</span>`;
@@ -175,6 +176,52 @@
 
             assert(!!mathjax, "serializeReplacementHTML keeps MathJax elements in the fragment");
             assert(mathjax && mathjax.getAttribute("data-formula") === "x < y > z", "serializeReplacementHTML round-trips MathJax angle brackets");
+        }
+
+        function test_remove_ai_hints() {
+            // Setup container with clozes and AI hints
+            const initialHTML = `<strong>Article&nbsp;</strong>{{c1::141}}<strong>:</strong> Makes {{c2::Supreme Court decisions binding on all courts}} in India` + 
+                `<div class="ai-hints-json" data-ai-hints-addon-id="2119980872" contenteditable="false" style="display:none">` + 
+                `{` + 
+                `  "c1": { "hints": ["Hint 1"], "options": ["141"], "correct_answer": "141" },` + 
+                `  "c2": { "hints": ["Hint 2"], "options": ["Supreme Court"], "correct_answer": "Supreme Court" }` + 
+                `}` + 
+                `</div>`;
+            
+            sandbox.innerHTML = initialHTML;
+
+            // Check that findAllClozeRanges extracts clozeNum
+            const text = api.getEditableSourceText(sandbox);
+            const ranges = api.findAllClozeRanges(text);
+            assert(ranges.length === 2, "findAllClozeRanges finds both c1 and c2");
+            assert(ranges[0].clozeNum === 2, "First cloze is c2");
+            assert(ranges[1].clozeNum === 1, "Second cloze is c1");
+
+            // Test replaceClozeByBoundsInContainer with c1
+            sandbox.innerHTML = initialHTML;
+            const text3 = api.getEditableSourceText(sandbox);
+            const ranges3 = api.findAllClozeRanges(text3);
+            const c1Bounds3 = ranges3.find(r => r.clozeNum === 1);
+            
+            const success3 = api.replaceClozeByBoundsInContainer(sandbox, c1Bounds3);
+            assert(success3, "replaceClozeByBoundsInContainer successfully removes c1");
+            
+            const aiHintsDiv3 = sandbox.querySelector("div.ai-hints-json");
+            assert(!!aiHintsDiv3, "AI hints div still exists when c2 remains");
+            if (aiHintsDiv3) {
+                const data = JSON.parse(aiHintsDiv3.textContent.trim());
+                assert(!data.hasOwnProperty("c1"), "AI hints c1 key is deleted");
+                assert(data.hasOwnProperty("c2"), "AI hints c2 key is preserved");
+            }
+
+            // Test removeAllClozesFromContainer returns correct cloze numbers and deletes the div entirely when no keys left
+            sandbox.innerHTML = initialHTML;
+            const removed = api.removeAllClozesFromContainer(sandbox);
+            assert(removed.length === 2, "removeAllClozesFromContainer removed 2 clozes");
+            assert(removed.includes(1) && removed.includes(2), "Removed list contains both 1 and 2");
+
+            const aiHintsDiv = sandbox.querySelector("div.ai-hints-json");
+            assert(!aiHintsDiv, "AI hints div is entirely removed when no clozes remain");
         }
 
         // Run tests when loaded
