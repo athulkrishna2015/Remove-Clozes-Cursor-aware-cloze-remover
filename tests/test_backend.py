@@ -17,8 +17,19 @@ def load_backend_module():
     sys.modules["aqt.editor"] = editor_mod
 
     module_path = Path(__file__).resolve().parents[1] / "addon" / "backend.py"
-    spec = importlib.util.spec_from_file_location("backend_module_under_test", module_path)
+    module_name = "backend_module_under_test"
+    spec = importlib.util.spec_from_file_location(
+        module_name, module_path, submodule_search_locations=[str(module_path.parent)]
+    )
     module = importlib.util.module_from_spec(spec)
+    module.__package__ = module_name
+    sys.modules[module_name] = module
+
+    # Mock logger
+    logger_mock = types.ModuleType("logger")
+    logger_mock.log = lambda *args, **kwargs: None
+    sys.modules[f"{module_name}.logger"] = logger_mock
+
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
